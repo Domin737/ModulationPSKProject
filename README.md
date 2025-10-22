@@ -78,25 +78,25 @@ python main.py
 
 ```
 ModulationPSKProject/
-├── docs/                    # Dokumentacja
-│   ├── index.md            # Indeks dokumentacji
+├── docs/                       # Katalog dokumentacji
+│   ├── index.md                # Indeks dokumentacji
 │   ├── requirements-and-environment.md
 │   ├── installation.md
 │   ├── project-structure.md
 │   ├── error-handling.md
 │   └── code-documentation.md
-├── results/                 # Wyniki symulacji i wykresy
-├── src/                     # Kod zrodlowy
-│   ├── GetBytes.py         # Generator bitow
-│   ├── Modulator.py        # Modulatory
-│   ├── AddAWGNNoise.py     # Generator szumu AWGN
+├── results/                    # Katalog wynikow symulacji i wykresow
+├── src/                        # Katalog kodow zrodlowych
+│   ├── GetBytes.py             # Generator bitow
+│   ├── Modulator.py            # Modulatory
+│   ├── AddAWGNNoise.py         # Generator szumu AWGN
 │   ├── TransmissionChannel.py  # Model kanalu
-│   ├── Demodulator.py      # Demodulatory
-│   └── main.py             # Program glowny
-├── requirements.txt         # Zaleznosci Python
-├── setup.bat               # Instalator Windows
-├── setup.sh                # Instalator Linux/Mac
-└── README.md               # Ten plik
+│   ├── Demodulator.py          # Demodulatory
+│   └── main.py                 # Program glowny
+├── requirements.txt            # Zaleznosci Python
+├── setup.bat                   # Instalator Windows
+├── setup.sh                    # Instalator Linux/Mac
+└── README.md                   # Ten plik
 
 ```
 
