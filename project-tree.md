@@ -4,10 +4,14 @@
 ModulationPSKProject
 |-- .
 |   |-- docs
-|   |   |-- COMPLETE_PROJECT_SUMMARY.md
-|   |   |-- FILE_INDEX.md
-|   |   |-- PROJECT_ARCHITECTURE.md
-|   |   +-- QUICK_START.md
+|   |   |-- code-documentation.md
+|   |   |-- error-handling.md
+|   |   |-- index.md
+|   |   |-- installation.md
+|   |   |-- list-files-instructions.md
+|   |   |-- project-structure.md
+|   |   |-- requirements-and-environment.md
+|   |   +-- start-here-summary.md
 |   |-- results
 |   |   |-- .gitkeep
 |   |   +-- README.md
@@ -15,11 +19,11 @@ ModulationPSKProject
 |   |   |-- AddAWGNNoise.py
 |   |   |-- Demodulator.py
 |   |   |-- GetBytes.py
+|   |   |-- init.py
 |   |   |-- main.py
 |   |   |-- Modulator.py
+|   |   |-- plot_utils.py
 |   |   +-- TransmissionChannel.py
-|   |-- venv
-|   |   |-- (...)
 |   |-- Export-ProjectStructure.ps1
 |   |-- README.md
 |   |-- requirements.txt
