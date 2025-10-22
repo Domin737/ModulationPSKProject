@@ -1,1197 +1,2009 @@
-# Technical Code Documentation
+# Dokumentacja Techniczna Kodu - ModulationPSKProject
 
-Reference manual for ModulationPSKProject codebase.
-Line-by-line analysis of all functions with technical details.
+Szczegolowa analiza implementacji z wyjasnieniami decyzji projektowych.
+Dla kazdej kluczowej funkcji: analiza linia po linii + uzasadnienie wyboru rozwiazania.
+
+**Wersja:** 1.0  
+**Data:** 2025-10-23
 
 ---
 
-## GetBytes.py
+## Spis tresci
 
-### `gen_bites(n_bits)`
+1. [Architektura systemu](#architektura-systemu)
+2. [Modulator.py - PRIORYTET WYSOKI](#modulatorpy)
+3. [Demodulator.py - PRIORYTET WYSOKI](#demodulatorpy)
+4. [AddAWGNNoise.py - PRIORYTET WYSOKI](#addawgnoisepy)
+5. [TransmissionChannel.py - PRIORYTET SREDNI](#transmissionchannelpy)
+6. [main.py - PRIORYTET SREDNI](#mainpy)
+7. [GetBytes.py - PRIORYTET NISKI](#getbytespy)
+8. [plot_utils.py - PRIORYTET NISKI](#plot_utilspy)
 
-**Purpose:** Generate random binary bits (0 or 1)
+---
 
-**Parameters:**
+## Architektura systemu
 
-- `n_bits` (int): Number of bits to generate
+### Przeplyw danych
 
-**Returns:** `np.ndarray` of shape (n_bits,) with dtype int64, values in {0, 1}
-
-**Dependencies:** numpy.random.randint
-
-**Time complexity:** O(n)
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
-
-```python
-def gen_bites(n_bits):
-    return np.random.randint(0, 2, size=n_bits)
-    # np.random.randint(low, high, size):
-    #   - low=0: inclusive lower bound
-    #   - high=2: exclusive upper bound -> generates {0, 1}
-    #   - size=n_bits: output array length
-    # Returns: ndarray of random integers
+```
+┌─────────────┐
+│  GetBytes   │ Generowanie losowych bitow (0/1)
+└──────┬──────┘
+       │ bits[]
+       v
+┌─────────────┐
+│  Modulator  │ Mapowanie bitow -> symbole zespolone
+└──────┬──────┘
+       │ symbols[] (complex)
+       v
+┌─────────────┐
+│ Transmission│ Dodanie szumu AWGN
+│  Channel    │
+└──────┬──────┘
+       │ received_symbols[] (complex + noise)
+       v
+┌─────────────┐
+│ Demodulator │ Odtworzenie bitow z symboli
+└──────┬──────┘
+       │ decoded_bits[]
+       v
+┌─────────────┐
+│  main.py    │ Porownanie bits[] vs decoded_bits[]
+│             │ Obliczenie BER, generowanie wykresow
+└─────────────┘
 ```
 
-**Example:**
+### Kluczowe decyzje projektowe
 
-```python
-bits = gen_bites(10)  # array([1, 0, 1, 1, 0, ...])
-```
+**1. Dlaczego NumPy zamiast czystego Pythona?**
 
-**Notes:**
+- Operacje wektorowe 10-100x szybsze niz petle Python
+- Natywna obsluga liczb zespolonych
+- Efektywne wykorzystanie pamieci (ciagly blok)
 
-- Name typo: "bites" should be "bits" (kept for backward compatibility)
-- Each call produces different random sequence
-- Uses numpy's Mersenne Twister PRNG
+**2. Dlaczego complex128 dla wszystkich modulacji?**
+
+- Uniwersalny interfejs (nawet BPSK zwraca complex)
+- Upraszcza kod demodulatorow (zawsze .real i .imag)
+- Bez konwersji typow pomiedzy etapami
+
+**3. Dlaczego Gray coding?**
+
+- Sasiednie symbole roznia sie 1 bitem
+- Minimalizuje BER przy bledach symboli
+- Standard w telekomunikacji
 
 ---
 
 ## Modulator.py
 
-### `bpsk_modulation(bits)`
+**Priorytet:** WYSOKI (rdzen systemu)
 
-**Purpose:** Map binary bits to BPSK constellation symbols
+### Przegladowe schematy konstelacji
 
-**Parameters:**
-
-- `bits` (np.ndarray): Binary array of 0s and 1s
-
-**Returns:** `np.ndarray` of dtype complex128, values in {-1+0j, 1+0j}
-
-**Dependencies:** None (pure numpy operations)
-
-**Time complexity:** O(n) where n = len(bits)
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
-
-```python
-def bpsk_modulation(bits):
-    symbols = 1 - 2 * bits
-    # Arithmetic mapping:
-    #   bit=0: 1 - 2*0 = 1
-    #   bit=1: 1 - 2*1 = -1
-    # Vectorized operation (no loop)
-
-    return symbols.astype(complex)
-    # Cast to complex128
-    # Real part = symbol value
-    # Imaginary part = 0
-    # Reason: Uniform interface with other modulations (QPSK, QAM use complex)
 ```
-
-**Example:**
-
-```python
-symbols = bpsk_modulation(np.array([0, 1, 0]))  # [1+0j, -1+0j, 1+0j]
+BPSK:          QPSK:           8-PSK:          16-QAM:
+  I              I               I               I
+  |              |               |               |
+--+-- R      ---+--- R      ----+---- R      ---+--- R
+ -1  +1      4 punkty        8 punktow       siatka 4x4
 ```
-
-**Notes:**
-
-- Energy per symbol: |s|² = 1
-- No normalization needed
-- Unused imports in original file (scipy.signal.windows.cosine, main)
 
 ---
 
-### `qpsk_modulation(bits)`
+### `bpsk_modulation(bits)` - Linia po linii
 
-**Purpose:** Map bit pairs to QPSK constellation symbols with Gray coding
+**Przeznaczenie:** Mapowanie bitow na symbole BPSK
 
-**Parameters:**
+**Parametry:**
 
-- `bits` (np.ndarray): Binary array, length must be even
+- `bits` (ndarray): Tablica binarnych wartosci {0, 1}
 
-**Returns:** `np.ndarray` of dtype complex128, length = len(bits)/2
+**Zwraca:** ndarray[complex128] - symbole {-1+0j, +1+0j}
 
-**Dependencies:** None
-
-**Time complexity:** O(n) where n = len(bits)
-
-**Space complexity:** O(n/2)
-
-**Raises:** `ValueError` if len(bits) is odd
-
-**Line-by-line:**
+**Kod:**
 
 ```python
-def qpsk_modulation(bits):
-    if len(bits) % 2 != 0:
-        raise ValueError("Number of bits must be even for QPSK")
-    # Validation: QPSK requires 2 bits per symbol
-
-    bit_pairs = bits.reshape(-1, 2)
-    # Reshape to (n/2, 2) array
-    # -1 infers dimension automatically
-    # Each row = one symbol's bit pair
-
-    norm = 1 / np.sqrt(2)
-    # Normalization factor
-    # Ensures E[|s|²] = 1
-    # Without: |1+1j|² = 2, With: |(1+1j)/√2|² = 1
-
-    qpsk_map = {
-        (0, 0): norm * (1 + 1j),   # 45°
-        (0, 1): norm * (-1 + 1j),  # 135°
-        (1, 1): norm * (-1 - 1j),  # 225°
-        (1, 0): norm * (1 - 1j)    # 315°
-    }
-    # Gray coding: adjacent symbols differ by 1 bit
-    # Dictionary for O(1) lookup
-
-    symbols = np.array([qpsk_map[tuple(pair)] for pair in bit_pairs], dtype=complex)
-    # List comprehension over bit_pairs
-    # tuple() converts ndarray row to hashable key
-    # dtype=complex explicit to avoid promotion issues
-
-    return symbols
+1  def bpsk_modulation(bits):
+2      symbols = 1 - 2 * bits
+3      return symbols.astype(complex)
 ```
 
-**Example:**
+**Analiza linia po linii:**
+
+**Linia 2: `symbols = 1 - 2 * bits`**
+
+Co robi:
+
+- Operacja wektorowa (dziala na calej tablicy naraz)
+- Dla bit=0: `1 - 2*0 = 1`
+- Dla bit=1: `1 - 2*1 = -1`
+
+Dlaczego tak a nie inaczej:
+
+**Alternatywa 1: Petla z if-else**
 
 ```python
-symbols = qpsk_modulation(np.array([0,0,1,1]))  # [0.707+0.707j, -0.707-0.707j]
+# ZLE - wolne
+symbols = []
+for bit in bits:
+    if bit == 0:
+        symbols.append(1)
+    else:
+        symbols.append(-1)
 ```
 
-**Notes:**
+Problem: ~100x wolniejsze dla duzych tablic
 
-- All symbols have equal magnitude: |s| = 1
-- Dictionary lookup O(1), alternative: indexing into constellation array
+**Alternatywa 2: np.where()**
+
+```python
+# OK, ale bardziej skomplikowane
+symbols = np.where(bits == 0, 1, -1)
+```
+
+Problem: Mniej czytelne, ten sam wynik
+
+**Alternatywa 3: Operator indeksowania**
+
+```python
+# OK, ale wymaga pomocniczej tablicy
+constellation = np.array([1, -1])
+symbols = constellation[bits]
+```
+
+Problem: Dodatkowa pamiec, mniej bezposrednie
+
+**Wybrane rozwiazanie:** `1 - 2*bits` jest:
+
+- Najprostsze (1 operacja)
+- Najszybsze (wektorowe)
+- Najbardziej czytelne (matematyczne)
+
+**Linia 3: `return symbols.astype(complex)`**
+
+Co robi:
+
+- Konwersja z float64 -> complex128
+- Real part = wartosc symbolu
+- Imag part = 0
+
+Dlaczego:
+
+- Uniwersalny interfejs (wszystkie modulacje zwracaja complex)
+- Upraszcza kod w TransmissionChannel (zawsze complex)
+- Bez konwersji w dalszych etapach
+
+**Przyklad uzycia:**
+
+```python
+bits = np.array([0, 1, 0, 1])
+symbols = bpsk_modulation(bits)  # [1+0j, -1+0j, 1+0j, -1+0j]
+```
+
+**Charakterystyka:**
+
+- Zlozonosc czasowa: O(n)
+- Zlozonosc pamieciowa: O(n)
+- Energia symbolu: |s|² = 1 (bez normalizacji)
 
 ---
 
-### `psk8_modulation(bits)`
+### `qpsk_modulation(bits)` - Linia po linii
 
-**Purpose:** Map bit triplets to 8-PSK constellation symbols with Gray coding
+**Przeznaczenie:** Mapowanie par bitow na symbole QPSK z Gray coding
 
-**Parameters:**
+**Konstelacja QPSK:**
 
-- `bits` (np.ndarray): Binary array, length must be multiple of 3
-
-**Returns:** `np.ndarray` of dtype complex128, length = len(bits)/3
-
-**Dependencies:** None
-
-**Time complexity:** O(n) where n = len(bits)
-
-**Space complexity:** O(n/3)
-
-**Raises:** `ValueError` if len(bits) % 3 != 0
-
-**Line-by-line:**
-
-```python
-def psk8_modulation(bits):
-    if len(bits) % 3 != 0:
-        raise ValueError("Number of bits must be multiple of 3 for 8-PSK")
-    # Validation: 3 bits per symbol
-
-    bit_triplets = bits.reshape(-1, 3)
-    # Reshape to (n/3, 3) array
-
-    angles = np.array([0, 1, 3, 2, 6, 7, 5, 4]) * np.pi / 4
-    # Gray coding sequence for 8-PSK
-    # Indices [0,1,3,2,6,7,5,4] not [0,1,2,3,4,5,6,7]
-    # Adjacent angles differ by 1 bit in binary representation
-    # Multiply by π/4: angles = [0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°]
-
-    constellation = np.exp(1j * angles)
-    # Euler's formula: e^(jθ) = cos(θ) + j*sin(θ)
-    # Creates 8 equally-spaced points on unit circle
-    # All have magnitude = 1
-
-    symbol_indices = bit_triplets[:, 0] * 4 + bit_triplets[:, 1] * 2 + bit_triplets[:, 2]
-    # Binary to decimal conversion
-    # bit0*2² + bit1*2¹ + bit2*2⁰
-    # Vectorized for all triplets
-
-    symbols = constellation[symbol_indices]
-    # Index into constellation using computed indices
-    # Advanced indexing: O(n)
-
-    return symbols
+```
+        Q (Imag)
+         ^
+    01   |   00
+  -------|--------> I (Real)
+    11   |   10
 ```
 
-**Example:**
+**Parametry:**
+
+- `bits` (ndarray): Tablica bitow, dlugosc MUSI byc parzysta
+
+**Zwraca:** ndarray[complex128] - dlugosc = len(bits)/2
+
+**Kod:**
 
 ```python
-symbols = psk8_modulation(np.array([0,0,0,1,1,1]))  # [1+0j, -0.707-0.707j]
+1   def qpsk_modulation(bits):
+2       if len(bits) % 2 != 0:
+3           raise ValueError("Number of bits must be even for QPSK")
+4
+5       bit_pairs = bits.reshape(-1, 2)
+6
+7       norm = 1 / np.sqrt(2)
+8
+9       qpsk_map = {
+10          (0, 0): norm * (1 + 1j),
+11          (0, 1): norm * (-1 + 1j),
+12          (1, 1): norm * (-1 - 1j),
+13          (1, 0): norm * (1 - 1j)
+14      }
+15
+16      symbols = np.array([qpsk_map[tuple(pair)] for pair in bit_pairs],
+17                         dtype=complex)
+18
+19      return symbols
 ```
 
-**Notes:**
+**Analiza linia po linii:**
 
-- Unit energy: |s|² = 1 for all symbols
-- Gray coding reduces bit error propagation
+**Linie 2-3: Walidacja**
+
+Dlaczego sprawdzac dlugosc:
+
+- QPSK wymaga 2 bity -> 1 symbol
+- Nieparzysta liczba bitow = niejednoznaczny ostatni symbol
+- Lepiej zglosic blad niz cicho obciac dane
+
+**Linia 5: `bit_pairs = bits.reshape(-1, 2)`**
+
+Co robi:
+
+- Przeksztalca [b0,b1,b2,b3] -> [[b0,b1], [b2,b3]]
+- `-1` = automatyczne wyliczenie wymiaru (n/2)
+- `2` = kazdy rzad ma 2 elementy
+
+Dlaczego tak:
+
+**Alternatywa: Petle z indeksowaniem**
+
+```python
+# ZLE - wolne
+bit_pairs = []
+for i in range(0, len(bits), 2):
+    bit_pairs.append([bits[i], bits[i+1]])
+```
+
+**Wybrane:** reshape() jest:
+
+- Wektorowe (bez petli)
+- Zwraca widok (bez kopiowania danych)
+- Standard w NumPy
+
+**Linia 7: `norm = 1 / np.sqrt(2)`**
+
+Co robi:
+
+- Oblicza wspolczynnik normalizacji
+
+Dlaczego normalizowac:
+
+- Bez normalizacji: |1+1j|² = 2
+- Z normalizacja: |(1+1j)/√2|² = 1
+- Wszystkie modulacje maja srednia energie = 1
+- Uczciwe porownanie BER
+
+**Linie 9-14: Slownik mapowania**
+
+Struktura:
+
+```
+(bit0, bit1) -> symbol
+```
+
+Dlaczego Gray coding (porzadek 00, 01, 11, 10):
+
+- Sasiednie symbole roznia sie 1 bitem
+- Przy bledzie symbolu zmienia sie 1 bit (nie 2)
+- Przyklady:
+  - 00 -> 01: zmiana 1 bitu, kat 90° (sasiedzi)
+  - 00 -> 11: zmiana 2 bitow, kat 180° (przeciwne)
+
+**Alternatywa: Natural coding (00, 01, 10, 11)**
+
+```python
+# Gorszy - wiecej bledow bitow
+qpsk_map_natural = {
+    (0, 0): norm * (1 + 1j),    # 00 - 45°
+    (0, 1): norm * (-1 + 1j),   # 01 - 135°
+    (1, 0): norm * (-1 - 1j),   # 10 - 225° <- 2 bity rozne od 01!
+    (1, 1): norm * (1 - 1j)     # 11 - 315°
+}
+```
+
+Problem: 01 i 10 roznia sie 2 bitami, ale sa obok siebie (90°)
+
+**Linie 16-17: Mapowanie**
+
+Co robi:
+
+- List comprehension przez wszystkie pary
+- `tuple(pair)` - konwersja ndarray na tuple (hashable)
+- Lookup w slowniku O(1)
+
+Dlaczego list comprehension:
+
+**Alternatywa 1: Petla z append**
+
+```python
+# ZLE - wolne
+symbols = []
+for pair in bit_pairs:
+    symbols.append(qpsk_map[tuple(pair)])
+symbols = np.array(symbols, dtype=complex)
+```
+
+**Alternatywa 2: Indeksowanie tablicy konstelacji**
+
+```python
+# OK - podobna szybkosc
+constellation = np.array([norm*(1+1j), norm*(-1+1j),
+                          norm*(-1-1j), norm*(1-1j)])
+indices = bit_pairs[:, 0] * 2 + bit_pairs[:, 1]
+symbols = constellation[indices]
+```
+
+Problem: Mniej czytelne, trudniejsze utrzymanie Gray coding
+
+**Wybrane:** Slownik bo:
+
+- Jawne mapowanie (latwo sprawdzic Gray coding)
+- Czytelne
+- Latwe do modyfikacji
+
+**Przyklad uzycia:**
+
+```python
+bits = np.array([0, 0, 1, 1])
+symbols = qpsk_modulation(bits)
+# [0.707+0.707j, -0.707-0.707j]
+```
 
 ---
 
-### `qam16_modulation(bits)`
+### `psk8_modulation(bits)` - Kluczowe punkty
 
-**Purpose:** Map bit quadruplets to 16-QAM constellation symbols with Gray coding
+**Przeznaczenie:** 3 bity -> 1 symbol na okregu jednostkowym
 
-**Parameters:**
+**Schemat konstelacji 8-PSK:**
 
-- `bits` (np.ndarray): Binary array, length must be multiple of 4
-
-**Returns:** `np.ndarray` of dtype complex128, length = len(bits)/4
-
-**Dependencies:** None
-
-**Time complexity:** O(n) where n = len(bits)
-
-**Space complexity:** O(n/4)
-
-**Raises:** `ValueError` if len(bits) % 4 != 0
-
-**Line-by-line:**
-
-```python
-def qam16_modulation(bits):
-    if len(bits) % 4 != 0:
-        raise ValueError("Number of bits must be multiple of 4 for 16-QAM")
-    # Validation: 4 bits per symbol
-
-    bit_groups = bits.reshape(-1, 4)
-    # Reshape to (n/4, 4) array
-
-    i_bits = bit_groups[:, 0:2]
-    q_bits = bit_groups[:, 2:4]
-    # Split each 4-bit group:
-    #   First 2 bits -> I component (real)
-    #   Last 2 bits -> Q component (imaginary)
-
-    pam4_map = {
-        (0, 0): -3,
-        (0, 1): -1,
-        (1, 1): +1,
-        (1, 0): +3
-    }
-    # PAM-4 (4-level Pulse Amplitude Modulation) with Gray coding
-    # Maps 2 bits to one of 4 amplitude levels
-    # Gray coding: adjacent levels differ by 1 bit
-
-    i_components = np.array([pam4_map[tuple(pair)] for pair in i_bits])
-    q_components = np.array([pam4_map[tuple(pair)] for pair in q_bits])
-    # Map I and Q bit pairs independently
-    # List comprehension + dictionary lookup
-
-    symbols = i_components + 1j * q_components
-    # Construct complex symbols
-    # Real part = I component
-    # Imaginary part = Q component
-
-    norm = 1 / np.sqrt(10)
-    symbols = symbols * norm
-    # Normalization factor for unit average energy
-    # E[|s|²] = (4*18 + 8*10 + 4*2)/16 = 10 before normalization
-    # After: 10 * (1/√10)² = 10 * 1/10 = 1
-
-    return symbols
+```
+        Q
+        |
+   011  |  001
+      \ | /
+-------\|/------- I
+      / | \
+   110  |  100
 ```
 
-**Example:**
+**Kod (kluczowe fragmenty):**
 
 ```python
-symbols = qam16_modulation(np.array([0,0,0,0,1,0,1,0]))  # [-0.949-0.949j, 0.949-0.316j]
+6   angles = np.array([0, 1, 3, 2, 6, 7, 5, 4]) * np.pi / 4
+7   constellation = np.exp(1j * angles)
+8   symbol_indices = bit_triplets[:, 0] * 4 + bit_triplets[:, 1] * 2 + bit_triplets[:, 2]
+9   symbols = constellation[symbol_indices]
 ```
 
-**Notes:**
+**Linia 6: Porzadek katow**
 
-- Non-constant envelope (amplitude varies)
-- Levels {-3,-1,+1,+3} chosen for Gray coding and symmetric thresholds
-- Average energy = 1 after normalization
+Dlaczego [0,1,3,2,6,7,5,4] a nie [0,1,2,3,4,5,6,7]:
+
+**Natural coding (zly):**
+
+```
+000 -> 0°    001 -> 45°
+010 -> 90°   011 -> 135°  <- 010 i 011 roznia sie 2 bitami!
+100 -> 180°  101 -> 225°
+110 -> 270°  111 -> 315°
+```
+
+**Gray coding (dobry - implementowany):**
+
+```
+000 -> 0°     001 -> 45°   <- zmiana 1 bitu
+001 -> 45°    011 -> 135°  <- zmiana 1 bitu
+011 -> 135°   010 -> 90°   <- zmiana 1 bitu
+...
+```
+
+Kazda para sasiadow rozni sie 1 bitem.
+
+**Linia 7: `np.exp(1j * angles)`**
+
+Wzor Eulera: e^(jθ) = cos(θ) + j·sin(θ)
+
+Dlaczego wzor Eulera:
+
+**Alternatywa: Bezposrednie cos/sin**
+
+```python
+# ZLE - bardziej skomplikowane
+constellation = np.cos(angles) + 1j * np.sin(angles)
+```
+
+Problem: Dwie funkcje zamiast jednej
+
+**Wybrane:** exp() jest:
+
+- Bardziej zwiezle
+- Standard w DSP
+- Numerycznie stabilne
+
+**Linia 8: Konwersja binarny -> dziesietny**
+
+Przeksztalcenie [b0, b1, b2] -> indeks:
+
+- b0 _ 4 + b1 _ 2 + b2 = b0·2² + b1·2¹ + b2·2⁰
+
+Wektorowe dla wszystkich trojek naraz.
+
+**Przyklad:**
+
+```python
+bits = np.array([0,0,0, 1,1,1])
+symbols = psk8_modulation(bits)
+# [1+0j, -0.707-0.707j]
+# Pierwszy: 000 -> indeks 0 -> kat 0° -> 1+0j
+# Drugi: 111 -> indeks 7 -> kat 315° -> cos(315°)+j·sin(315°)
+```
+
+**Wzorzec:** Ten sam schemat (reshape -> konstelacja -> indeksowanie) powtarza sie w 8-PSK i QAM. Spowodowane projektowaniem przez analogie - raz ustalony wzorzec, latwo rozszerzyc na inne modulacje.
 
 ---
 
-## AddAWGNNoise.py
+### `qam16_modulation(bits)` - Kluczowe punkty
 
-### `add_awgn_noise(symbols, eb_n0_db)`
+**Przeznaczenie:** 4 bity -> symbol z siatki 4x4
 
-**Purpose:** Add complex AWGN noise to modulated symbols
+**Schemat konstelacji 16-QAM:**
 
-**Parameters:**
-
-- `symbols` (np.ndarray[complex]): Input symbols
-- `eb_n0_db` (float): Energy per bit to noise ratio in dB
-
-**Returns:** `np.ndarray[complex]` of same shape as input, symbols + noise
-
-**Dependencies:** numpy.random.normal
-
-**Time complexity:** O(n) where n = len(symbols)
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
-
-```python
-def add_awgn_noise(symbols, eb_n0_db):
-    eb_n0 = 10 ** (eb_n0_db / 10.0)
-    # Convert dB to linear scale
-    # Formula: linear = 10^(dB/10)
-    # Example: 10 dB -> 10^(10/10) = 10
-
-    eb = 1.0
-    # Normalized energy per bit
-    # Assumption: symbols are already normalized to unit energy
-
-    n0 = eb / eb_n0
-    # Noise power spectral density
-    # N0 = Eb / (Eb/N0)
-    # Higher Eb/N0 -> lower N0 -> less noise
-
-    sigma = np.sqrt(n0 / 2)
-    # Standard deviation for each noise component (I and Q)
-    # Divide by 2 because noise is split between I and Q
-    # Total noise power = σ²_I + σ²_Q = 2*σ² = N0
-
-    n_symbols = symbols.shape[0]
-    # Get array length
-    # Use .shape[0] not len() for consistency with multidimensional arrays
-
-    noise_i = sigma * np.random.normal(0, 1, size=n_symbols)
-    # In-phase noise component
-    # normal(mean=0, std=1, size): standard normal distribution
-    # Multiply by sigma to scale
-
-    noise_q = sigma * np.random.normal(0, 1, size=n_symbols)
-    # Quadrature noise component
-    # Independent from noise_i
-
-    awgn_noise = noise_i + 1j * noise_q
-    # Construct complex noise
-    # Real part = I noise
-    # Imaginary part = Q noise
-
-    received_symbols = symbols + awgn_noise
-    # Additive noise model: y = s + n
-    # Vectorized addition
-
-    return received_symbols
+```
+  Q
+  |
+  3   o  o  o  o
+  1   o  o  o  o
+ -1   o  o  o  o
+ -3   o  o  o  o
+  |_______________ I
+     -3 -1  1  3
 ```
 
-**Example:**
+**Kod (kluczowe fragmenty):**
 
 ```python
-noisy = add_awgn_noise(np.array([1+0j, -1+0j]), eb_n0_db=10)
-# noisy ≈ [1.05+0.12j, -0.93-0.08j]
+5   bit_groups = bits.reshape(-1, 4)
+6   i_bits = bit_groups[:, 0:2]
+7   q_bits = bit_groups[:, 2:4]
+8
+9   pam4_map = {
+10      (0, 0): -3,
+11      (0, 1): -1,
+12      (1, 1): +1,
+13      (1, 0): +3
+14  }
+15
+16  i_components = np.array([pam4_map[tuple(pair)] for pair in i_bits])
+17  q_components = np.array([pam4_map[tuple(pair)] for pair in q_bits])
+18
+19  symbols = i_components + 1j * q_components
+20
+21  norm = 1 / np.sqrt(10)
+22  symbols = symbols * norm
 ```
 
-**Notes:**
+**Linie 6-7: Podzial na I i Q**
 
-- Each call generates different noise (random)
-- Noise is Gaussian: mean=0, variance=σ²
-- Complex noise: both I and Q are independent Gaussian
+Co robi:
 
----
+- 4 bity -> [b0, b1] (I) i [b2, b3] (Q)
+- Niezalezne mapowanie dla Real i Imag
 
-## TransmissionChannel.py
+Dlaczego podzial:
 
-### `transmission_channel(symbols, eb_n0_db)`
+- QAM = 2 niezalezne modulacje PAM
+- I i Q modulowane osobno
+- Upraszcza demodulacje (osobne progi)
 
-**Purpose:** Simulate transmission through AWGN channel
+**Linie 9-14: PAM-4 mapping**
 
-**Parameters:**
+Dlaczego poziomy {-3, -1, +1, +3}:
 
-- `symbols` (np.ndarray[complex]): Transmitted symbols
-- `eb_n0_db` (float): Channel quality in dB
-
-**Returns:** `np.ndarray[complex]` received symbols with noise
-
-**Dependencies:** add_awgn_noise (from AddAWGNNoise)
-
-**Time complexity:** O(n) where n = len(symbols)
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
+**Alternatywa: {-1.5, -0.5, +0.5, +1.5}**
 
 ```python
-def transmission_channel(symbols, eb_n0_db):
-    received_symbols = add_awgn_noise(symbols, eb_n0_db)
-    # Delegate to noise generation function
-    # Simple wrapper for extensibility
-
-    return received_symbols
+# Gorsze - asymetryczne progi
+pam4_map = {
+    (0,0): -1.5, (0,1): -0.5,
+    (1,1): +0.5, (1,0): +1.5
+}
 ```
 
-**Example:**
+Problem: Progi przy -1.0, 0, +1.0 - nierownomierne odstepy
+
+**Wybrane {-3, -1, +1, +3}:**
+
+- Progi przy -2, 0, +2 (symetryczne)
+- Rowne odstepy
+- Gray coding (sasiednie poziomy roznia sie 1 bitem)
+
+**Linie 21-22: Normalizacja**
+
+Dlaczego 1/√10:
+
+Energia przed normalizacja:
+
+```
+E[|s|²] = E[I²] + E[Q²]
+E[I²] = ((-3)² + (-1)² + 1² + 3²) / 4 = (9+1+1+9)/4 = 5
+E[Q²] = 5  (taki sam)
+E[|s|²] = 5 + 5 = 10
+```
+
+Po normalizacji (1/√10)²:
+
+```
+E[|s|²] = 10 * (1/√10)² = 10 * 1/10 = 1 ✓
+```
+
+**Przyklad:**
 
 ```python
-received = transmission_channel(symbols, eb_n0_db=5)
+bits = np.array([0,0,0,0, 1,0,1,0])
+symbols = qam16_modulation(bits)
+# Pierwszy: [0,0] -> I=-3, [0,0] -> Q=-3, symbol = (-3-3j)/√10
+# Drugi: [1,0] -> I=+3, [1,0] -> Q=+3, symbol = (3+3j)/√10
 ```
-
-**Notes:**
-
-- Minimal implementation for basic AWGN channel
-- Easily extensible: add fading, frequency offset, etc.
-- Separation of concerns: channel ≠ noise generation
 
 ---
 
 ## Demodulator.py
 
-### `bpsk_demodulation(received_symbols)`
+**Priorytet:** WYSOKI (odzyskiwanie danych)
 
-**Purpose:** Demodulate BPSK symbols to bits using threshold detection
+### Ogolna zasada
 
-**Parameters:**
+Wszystkie demodulatory: symbol z szumem -> najblizsza konstelacja -> bity
 
-- `received_symbols` (np.ndarray[complex]): Received noisy symbols
-
-**Returns:** `np.ndarray[int]` of shape (n,), values in {0, 1}
-
-**Dependencies:** None
-
-**Time complexity:** O(n)
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
-
-```python
-def bpsk_demodulation(received_symbols):
-    decoded_bits = (received_symbols.real < 0).astype(int)
-    # Threshold detection on real component:
-    #   Re(symbol) < 0 -> bit = 1
-    #   Re(symbol) >= 0 -> bit = 0
-    # Comparison returns boolean array
-    # .astype(int): False->0, True->1
-    # Vectorized: no loop
-
-    return decoded_bits
 ```
-
-**Example:**
-
-```python
-bits = bpsk_demodulation(np.array([0.95+0.1j, -1.05-0.2j]))  # [0, 1]
+         Odebrane
+            |
+            v
+     Znajdz najblizszy
+     punkt konstelacji
+            |
+            v
+       Wyciagnij bity
 ```
-
-**Notes:**
-
-- Ignores imaginary part (BPSK is real-valued)
-- Decision threshold = 0
-- Optimal for AWGN channel (Maximum Likelihood)
 
 ---
 
-### `qpsk_demodulation(received_symbols)`
+### `bpsk_demodulation(received_symbols)` - Linia po linii
 
-**Purpose:** Demodulate QPSK symbols to bits using quadrant detection
+**Przeznaczenie:** Prosta decyzja progowa: Re(s) > 0 -> bit 0, Re(s) ≤ 0 -> bit 1
 
-**Parameters:**
-
-- `received_symbols` (np.ndarray[complex]): Received noisy symbols
-
-**Returns:** `np.ndarray[int]` of shape (2\*n,), values in {0, 1}
-
-**Dependencies:** None
-
-**Time complexity:** O(n) where n = len(received_symbols)
-
-**Space complexity:** O(2n)
-
-**Line-by-line:**
+**Kod:**
 
 ```python
-def qpsk_demodulation(received_symbols):
-    n_symbols = len(received_symbols)
-    bits = np.zeros(n_symbols * 2, dtype=int)
-    # Preallocate output array
-    # Length = 2 * number of symbols (2 bits per symbol)
-
-    i_component = received_symbols.real
-    q_component = received_symbols.imag
-    # Extract I and Q components
-    # .real and .imag are O(1) views, not copies
-
-    for idx, (i, q) in enumerate(zip(i_component, q_component)):
-        # Iterate over I and Q pairs
-        # zip() creates iterator of tuples
-        # enumerate() adds index
-
-        if i >= 0 and q >= 0:      # Quadrant I
-            bits[2*idx:2*idx+2] = [0, 0]
-        elif i < 0 and q >= 0:     # Quadrant II
-            bits[2*idx:2*idx+2] = [0, 1]
-        elif i < 0 and q < 0:      # Quadrant III
-            bits[2*idx:2*idx+2] = [1, 1]
-        else:                       # Quadrant IV (i >= 0, q < 0)
-            bits[2*idx:2*idx+2] = [1, 0]
-        # Decision regions based on sign of I and Q
-        # Gray coding preserved
-        # Slice assignment: bits[start:end] = [b0, b1]
-
-    return bits
+1  def bpsk_demodulation(received_symbols):
+2      decoded_bits = (received_symbols.real < 0).astype(int)
+3      return decoded_bits
 ```
 
-**Example:**
+**Linia 2: Calosc logiki**
+
+Co robi:
+
+- `.real` - wyciaga czesc rzeczywista (BPSK ma Im=0)
+- `< 0` - porownanie, zwraca bool array
+- `.astype(int)` - konwersja True->1, False->0
+
+Dlaczego tak:
+
+**Alternatywa 1: np.where()**
 
 ```python
-bits = qpsk_demodulation(np.array([0.8+0.7j, -0.6-0.9j]))  # [0,0,1,1]
+# Bardziej rozwlekle
+decoded_bits = np.where(received_symbols.real < 0, 1, 0)
 ```
 
-**Notes:**
+**Alternatywa 2: Petla**
 
-- Loop-based (not vectorized) for clarity
-- Could be optimized with boolean indexing
-- Decision boundaries at I=0, Q=0
+```python
+# ZLE - wolne
+decoded_bits = []
+for symbol in received_symbols:
+    if symbol.real < 0:
+        decoded_bits.append(1)
+    else:
+        decoded_bits.append(0)
+```
+
+**Wybrane:** Wektorowe porownanie to:
+
+- Najkrotsza forma (1 linia)
+- Najszybsza (wektorowe)
+- Idiomatyczne NumPy
+
+**Prog 0 - dlaczego:**
+
+Konstelacja BPSK: {-1, +1}
+
+- Optymalny prog = srednia = (-1+1)/2 = 0
+- Symetryczne rozlozenie bledow
+- Bez bias
+
+**Przyklad:**
+
+```python
+received = np.array([0.9+0j, -1.2+0j, 0.1+0j])
+bits = bpsk_demodulation(received)  # [0, 1, 0]
+# 0.9 > 0 -> False -> 0
+# -1.2 < 0 -> True -> 1
+# 0.1 > 0 -> False -> 0
+```
 
 ---
 
-### `psk8_demodulation(received_symbols)`
+### `qpsk_demodulation(received_symbols)` - Kluczowe punkty
 
-**Purpose:** Demodulate 8-PSK symbols using minimum distance detection
+**Przeznaczenie:** Dekodowanie QPSK przez regiony konstelacji
 
-**Parameters:**
+**Schemat regionow:**
 
-- `received_symbols` (np.ndarray[complex]): Received noisy symbols
-
-**Returns:** `np.ndarray[int]` of shape (3\*n,), values in {0, 1}
-
-**Dependencies:** None
-
-**Time complexity:** O(8n) = O(n) where n = len(received_symbols)
-
-**Space complexity:** O(3n)
-
-**Line-by-line:**
-
-```python
-def psk8_demodulation(received_symbols):
-    angles = np.array([0, 1, 3, 2, 6, 7, 5, 4]) * np.pi / 4
-    constellation = np.exp(1j * angles)
-    # Create reference constellation
-    # Same as in modulator (Gray coding)
-    # Could be precomputed for efficiency
-
-    n_symbols = len(received_symbols)
-    bits = np.zeros(n_symbols * 3, dtype=int)
-    # Preallocate: 3 bits per symbol
-
-    for idx, symbol in enumerate(received_symbols):
-        # Iterate over received symbols
-
-        distances = np.abs(symbol - constellation)
-        # Compute Euclidean distance to all 8 constellation points
-        # np.abs() for complex = sqrt(Re²+Im²)
-        # Vectorized over constellation (8 distances computed)
-
-        closest_idx = np.argmin(distances)
-        # Find index of minimum distance
-        # Maximum Likelihood (ML) detection for AWGN
-        # O(8) operation
-
-        bit0 = (closest_idx >> 2) & 1
-        bit1 = (closest_idx >> 1) & 1
-        bit2 = closest_idx & 1
-        # Binary decomposition of index
-        # >> : right shift (divide by 2^k)
-        # & 1 : extract LSB
-        # Example: idx=5 (101 binary)
-        #   bit0 = (101 >> 2) & 1 = 001 & 1 = 1
-        #   bit1 = (101 >> 1) & 1 = 010 & 1 = 0
-        #   bit2 = 101 & 1 = 1
-
-        bits[3*idx:3*idx+3] = [bit0, bit1, bit2]
-        # Store 3 bits in output array
-
-    return bits
+```
+        Q
+   II   |   I
+  (01)  |  (00)
+--------|-------- I
+  (11)  | (10)
+   III  |  IV
 ```
 
-**Example:**
+**Kod (kluczowe fragmenty):**
 
 ```python
-bits = psk8_demodulation(np.array([0.95+0.1j, -0.7-0.7j]))  # [0,0,1,1,1,0]
+5   n_symbols = len(received_symbols)
+6   bits = np.zeros(n_symbols * 2, dtype=int)
+7
+8   i_component = received_symbols.real
+9   q_component = received_symbols.imag
+10
+11  for idx, (i, q) in enumerate(zip(i_component, q_component)):
+12      if i >= 0 and q >= 0:      # Kwadrant I
+13          bits[2*idx:2*idx+2] = [0, 0]
+14      elif i < 0 and q >= 0:     # Kwadrant II
+15          bits[2*idx:2*idx+2] = [0, 1]
+16      elif i < 0 and q < 0:      # Kwadrant III
+17          bits[2*idx:2*idx+2] = [1, 1]
+18      else:                       # Kwadrant IV (i >= 0, q < 0)
+19          bits[2*idx:2*idx+2] = [1, 0]
 ```
 
-**Notes:**
+**Linia 6: Prealokacja**
 
-- Minimum distance = Maximum Likelihood for equal-probability symbols
-- Alternative: phase-based detection (compute angle, discretize)
-- Complexity: O(8n) for 8 distance computations per symbol
+Dlaczego `np.zeros(n_symbols * 2)`:
+
+- QPSK: 1 symbol = 2 bity
+- Prealokacja szybsza niz append
+- Wymaga znania rozmiaru z gory
+
+**Linie 8-9: Rozdzielenie I i Q**
+
+Dlaczego osobno:
+
+- Decyzje niezalezne dla I i Q
+- Progi przy 0 dla obu osi
+
+**Linie 11-19: Petla po symbolach**
+
+Dlaczego petla a nie wektorowe:
+
+**Alternatywa: Boolean indexing**
+
+```python
+# Mozliwe, ale skomplikowane
+mask_q1 = (i_component >= 0) & (q_component >= 0)
+mask_q2 = (i_component < 0) & (q_component >= 0)
+# ... (4 maski)
+bits[mask_q1.repeat(2)] = ... # Trudne!
+```
+
+Problem: Przeplatanie bitow trudne do wektoryzacji
+
+**Wybrane:** Petla bo:
+
+- Czytelniejsze (jasne case'y)
+- Latwe do debugowania
+- Nie jest bottleneck (mala liczba symboli)
+
+**Mapowanie zgodne z Gray coding:**
+
+- 00 <-> 01: roznia sie 1 bitem, sasiednie (I>0, Q rozne)
+- 01 <-> 11: roznia sie 1 bitem, sasiednie (I<0, Q rozne)
+- itd.
+
+**Przyklad:**
+
+```python
+received = np.array([0.8+0.6j, -0.5+0.3j])
+bits = qpsk_demodulation(received)  # [0,0, 0,1]
+# Pierwszy: I>0, Q>0 -> Kwadrant I -> 00
+# Drugi: I<0, Q>0 -> Kwadrant II -> 01
+```
 
 ---
 
-### `qam16_demodulation(received_symbols)`
+### `psk8_demodulation(received_symbols)` - Kluczowe punkty
 
-**Purpose:** Demodulate 16-QAM symbols using threshold detection on I and Q
+**Przeznaczenie:** Minimum distance decoding - znajdz najblizszy z 8 punktow
 
-**Parameters:**
-
-- `received_symbols` (np.ndarray[complex]): Received noisy symbols (normalized)
-
-**Returns:** `np.ndarray[int]` of shape (4\*n,), values in {0, 1}
-
-**Dependencies:** None
-
-**Time complexity:** O(n)
-
-**Space complexity:** O(4n)
-
-**Line-by-line:**
+**Kod (kluczowy fragment):**
 
 ```python
-def qam16_demodulation(received_symbols):
-    norm = np.sqrt(10)
-    denorm_symbols = received_symbols * norm
-    # Denormalize symbols
-    # Reverse the normalization from modulator (1/√10)
-    # Now symbols are at levels {-3,-1,+1,+3} for I and Q
-
-    n_symbols = len(received_symbols)
-    bits = np.zeros(n_symbols * 4, dtype=int)
-    # Preallocate: 4 bits per symbol
-
-    def pam4_demod(value):
-        # Nested helper function
-        # Demodulate single PAM-4 value to 2 bits
-
-        if value < -2:
-            return [0, 0]  # Level -3
-        elif value < 0:
-            return [0, 1]  # Level -1
-        elif value < 2:
-            return [1, 1]  # Level +1
-        else:
-            return [1, 0]  # Level +3
-        # Threshold detection with thresholds at -2, 0, +2
-        # Gray coding: adjacent levels differ by 1 bit
-
-    for idx, symbol in enumerate(denorm_symbols):
-        # Iterate over symbols
-
-        i_bits = pam4_demod(symbol.real)
-        q_bits = pam4_demod(symbol.imag)
-        # Demodulate I and Q independently
-        # Each produces 2 bits
-
-        bits[4*idx:4*idx+4] = i_bits + q_bits
-        # Concatenate I and Q bits
-        # List addition: [a,b] + [c,d] = [a,b,c,d]
-        # Store 4 bits in output
-
-    return bits
+6   angles = np.array([0, 1, 3, 2, 6, 7, 5, 4]) * np.pi / 4
+7   constellation = np.exp(1j * angles)
+8
+9   n_symbols = len(received_symbols)
+10  bits = np.zeros(n_symbols * 3, dtype=int)
+11
+12  for idx, symbol in enumerate(received_symbols):
+13      distances = np.abs(symbol - constellation)
+14      closest_idx = np.argmin(distances)
+15
+16      bit0 = (closest_idx >> 2) & 1
+17      bit1 = (closest_idx >> 1) & 1
+18      bit2 = closest_idx & 1
+19
+20      bits[3*idx:3*idx+3] = [bit0, bit1, bit2]
 ```
 
-**Example:**
+**Linia 13: Obliczenie odleglosci**
+
+Co robi:
+
+- `symbol - constellation` - roznica wektorowa (1 vs 8 elementow, broadcast)
+- `np.abs()` - modul liczby zespolonej |a+bj| = √(a²+b²)
+- Zwraca 8 odleglosci
+
+Dlaczego Euklidesowa:
+
+**Alternatywa: Odleglosc Manhattan**
 
 ```python
-bits = qam16_demodulation(np.array([0.95+0.32j, -0.32-0.95j]))  # [1,1,1,1,0,1,0,0]
+# Gorsze - nieoptymalny estimator
+distances = np.abs(symbol.real - constellation.real) + \
+            np.abs(symbol.imag - constellation.imag)
 ```
 
-**Notes:**
+Problem: Nie minimalizuje BER
 
-- Independent demodulation of I and Q (simplified ML)
-- Thresholds at midpoints: -2, 0, +2
-- Nested function for code reuse
+**Wybrane:** Euklidesowa (modul) to:
+
+- Optymalny detektor dla AWGN
+- Minimalizuje prawdopodobienstwo bledu
+- Standard w telekomunikacji
+
+**Linia 14: `np.argmin(distances)`**
+
+Zwraca indeks minimum (0-7).
+
+**Linie 16-18: Konwersja indeks -> bity**
+
+Operacje bitowe:
+
+- `>> 2` - przesuniecie w prawo o 2 (dzielenie przez 4)
+- `>> 1` - przesuniecie o 1 (dzielenie przez 2)
+- `& 1` - AND z 1 (wyciaga najmniej znaczacy bit)
+
+Przyklad dla idx=6 (binarnie 110):
+
+```
+bit0 = (110 >> 2) & 1 = (001) & 1 = 1
+bit1 = (110 >> 1) & 1 = (011) & 1 = 1
+bit2 = (110) & 1 = 0
+Wynik: [1, 1, 0]
+```
+
+Dlaczego operacje bitowe:
+
+**Alternatywa: Dzielenie i modulo**
+
+```python
+# Wolniejsze
+bit0 = (closest_idx // 4) % 2
+bit1 = (closest_idx // 2) % 2
+bit2 = closest_idx % 2
+```
+
+**Wybrane:** Operacje bitowe to:
+
+- Szybsze (instrukcje CPU)
+- Idiomatyczne dla bit manipulation
+- Powszechne w DSP
+
+**Przyklad:**
+
+```python
+received = np.array([0.8+0.5j, -0.9+0.1j])
+bits = psk8_demodulation(received)
+# Pierwszy: Oblicz 8 odleglosci, najblizszy moze byc indeks 1 (45°)
+# Drugi: Najblizszy moze byc indeks 4 (180°)
+# Zwraca odpowiadajace trojki bitow
+```
+
+**Wzorzec:** Minimum distance decoding powtarza sie w 8-PSK i czesciowo w QAM. Uniwersalna metoda dla constellation-based modulations.
+
+---
+
+### `qam16_demodulation(received_symbols)` - Kluczowe punkty
+
+**Przeznaczenie:** Dekodowanie przez progi I i Q osobno
+
+**Schemat progow:**
+
+```
+  Q
+  |
+  2 ----+----+----+----
+  0 ----+----+----+----
+ -2 ----+----+----+----
+  |___________________ I
+       -2    0    2
+```
+
+**Kod (kluczowe fragmenty):**
+
+```python
+5   norm = np.sqrt(10)
+6   denorm_symbols = received_symbols * norm
+7
+11  def pam4_demod(value):
+12      if value < -2:
+13          return [0, 0]  # -3
+14      elif value < 0:
+15          return [0, 1]  # -1
+16      elif value < 2:
+17          return [1, 1]  # +1
+18      else:
+19          return [1, 0]  # +3
+20
+21  for idx, symbol in enumerate(denorm_symbols):
+22      i_bits = pam4_demod(symbol.real)
+23      q_bits = pam4_demod(symbol.imag)
+24      bits[4*idx:4*idx+4] = i_bits + q_bits
+```
+
+**Linie 5-6: Denormalizacja**
+
+Dlaczego:
+
+- Modulacja mnozy przez 1/√10
+- Progi dla {-3,-1,+1,+3} nie dla {-0.949,-0.316,+0.316,+0.949}
+- Przywrocenie oryginalnych poziomow upraszcza porownania
+
+**Funkcja pam4_demod: Progi**
+
+Dlaczego [-inf, -2), [-2, 0), [0, 2), [2, +inf]:
+
+Oryginalne poziomy: {-3, -1, +1, +3}
+
+- Prog -2: srodek pomiedzy -3 i -1
+- Prog 0: srodek pomiedzy -1 i +1
+- Prog 2: srodek pomiedzy +1 i +3
+
+Optymalne progi dla rownomiernego szumu.
+
+**Linie 22-23: Niezalezne I i Q**
+
+Co robi:
+
+- Real part -> 2 bity (I)
+- Imag part -> 2 bity (Q)
+- Laczenie: [I0, I1, Q0, Q1]
+
+Dlaczego osobno:
+
+- QAM = dwie niezalezne modulacje PAM
+- Decyzje ortogonalne
+- Upraszcza logike
+
+**Przyklad:**
+
+```python
+# Symbol po modulacji: (3+1j)/√10 = 0.949+0.316j
+received = np.array([0.949+0.316j])
+# Denormalizacja: 0.949*√10 = 3.0, 0.316*√10 = 1.0
+# Real=3.0 > 2 -> [1,0]
+# Imag=1.0, 0 < 1.0 < 2 -> [1,1]
+bits = qam16_demodulation(received)  # [1,0,1,1]
+```
+
+---
+
+## AddAWGNNoise.py
+
+**Priorytet:** WYSOKI (modelowanie kanalu)
+
+### `add_awgn_noise(symbols, eb_n0_db)` - Linia po linii
+
+**Przeznaczenie:** Dodanie szumu gaussowskiego o kontrolowanej mocy
+
+**Kod:**
+
+```python
+1   def add_awgn_noise(symbols, eb_n0_db):
+2       eb_n0 = 10 ** (eb_n0_db / 10.0)
+3
+4       eb = 1.0
+5       n0 = eb / eb_n0
+6
+7       sigma = np.sqrt(n0 / 2)
+8
+9       n_symbols = symbols.shape[0]
+10
+11      noise_i = sigma * np.random.normal(0, 1, size=n_symbols)
+12      noise_q = sigma * np.random.normal(0, 1, size=n_symbols)
+13
+14      awgn_noise = noise_i + 1j * noise_q
+15
+16      received_symbols = symbols + awgn_noise
+17
+18      return received_symbols
+```
+
+**Linia 2: Konwersja dB -> liniowa**
+
+Wzor: dB = 10·log₁₀(x) → x = 10^(dB/10)
+
+Dlaczego:
+
+- Uzytkownik podaje Eb/N0 w dB (standard)
+- Obliczenia wymagaja skali liniowej
+- dB wygodny dla czlowieka (zakres -10 do +20 dB)
+
+**Linia 5: `n0 = eb / eb_n0`**
+
+Definicja:
+
+- Eb = energia na bit
+- N0 = gestosc widmowa mocy szumu
+- Eb/N0 = SNR w telekomunikacji
+
+Dlaczego eb=1.0:
+
+- Modulacje znormalizowane: E[|s|²]=1
+- Upraszcza obliczenia
+- Uniwersalne (dziala dla wszystkich modulacji)
+
+**Linia 7: `sigma = np.sqrt(n0 / 2)`**
+
+Dlaczego N0/2:
+
+Szum zespolony = szum_I + j·szum_Q
+
+- Moc calkowita = Var(I) + Var(Q) = N0
+- Niezalezne I i Q: Var(I) = Var(Q) = N0/2
+- Odchylenie std: σ = √(N0/2)
+
+**Linie 11-12: Generowanie szumu**
+
+Co robi:
+
+- `np.random.normal(0, 1)` - standardowy Gauss (μ=0, σ=1)
+- Mnozenie przez sigma - skalowanie do zadanej mocy
+
+Dlaczego niezalezne I i Q:
+
+**Alternatywa: Jeden szum zespolony**
+
+```python
+# ZLE - niepoprawny statystycznie
+noise = np.random.normal(0, sigma, size=n_symbols) + \
+        1j * np.random.normal(0, sigma, size=n_symbols)
+```
+
+Problem: Bledna moc (2·sigma² zamiast sigma²)
+
+**Wybrane:** Niezalezne I i Q z sigma = √(N0/2) daje:
+
+- Moc I = sigma² = N0/2
+- Moc Q = sigma² = N0/2
+- Moc total = N0 ✓
+
+**Linia 14: Konstrukcja szumu zespolonego**
+
+Dlaczego oddzielne I i Q:
+
+- Szum AWGN ma niezalezne skladowe
+- Model fizyczny (quadrature channels)
+- Zgodny z teoria
+
+**Linia 16: Dodanie szumu**
+
+Najprostsza operacja - model addytywny.
+
+Dlaczego addytywny:
+
+**Alternatywa: Multiplikatywny (fading)**
+
+```python
+# Inny model kanalu
+received_symbols = symbols * fading_coefficient + awgn_noise
+```
+
+**Wybrane:** AWGN to czysty model addytywny:
+
+- Najprostszy kanal
+- Baseline do porownan
+- Dobrze zrozumiany teoretycznie
+
+**Przyklad:**
+
+```python
+symbols = np.array([1+0j, -1+0j])
+noisy = add_awgn_noise(symbols, eb_n0_db=10)
+# Przy Eb/N0=10dB szum jest maly
+# Wynik: [1.05+0.02j, -0.98-0.03j] (przykladowo)
+```
+
+---
+
+## TransmissionChannel.py
+
+**Priorytet:** SREDNI (prosta warstwa posrednia)
+
+### `transmission_channel(symbols, eb_n0_db)` - Cala funkcja
+
+**Przeznaczenie:** Wrapper wokol add_awgn_noise
+
+**Kod:**
+
+```python
+1  def transmission_channel(symbols, eb_n0_db):
+2      received_symbols = add_awgn_noise(symbols, eb_n0_db)
+3      return received_symbols
+```
+
+**Analiza:**
+
+Dlaczego osobny modul dla 2 linii:
+
+**Uzasadnienie architektury:**
+
+1. **Separation of concerns:**
+
+   - AddAWGNNoise = generator szumu (narzedzie)
+   - TransmissionChannel = model kanalu (koncept)
+
+2. **Przyszle rozszerzenia:**
+
+   ```python
+   # Potencjalne dodania:
+   def transmission_channel(symbols, eb_n0_db, channel_type='awgn'):
+       if channel_type == 'awgn':
+           return add_awgn_noise(symbols, eb_n0_db)
+       elif channel_type == 'rayleigh':
+           return add_rayleigh_fading(symbols, eb_n0_db)
+       # ...
+   ```
+
+3. **Klarownosc API:**
+   - Uzytkownik mysli: "transmisja przez kanal"
+   - Nie: "dodanie szumu" (szczegol implementacji)
+
+**Alternatywa: Bezposrednie wywolanie add_awgn_noise**
+
+```python
+# Mozliwe, ale mniej elastyczne
+received = add_awgn_noise(symbols, eb_n0_db)
+```
+
+**Wybrane:** Osobny modul to:
+
+- Lepsza abstrakcja (kanal != szum)
+- Latwiejsze zmiany (jedne miejsce)
+- Zgodne z domain model (telekomunikacja)
+
+**Przyklad:**
+
+```python
+symbols = bpsk_modulation(bits)
+received = transmission_channel(symbols, eb_n0_db=8)
+# Jednoznaczne: symbole przez kanal
+```
+
+**Wzorzec:** Ten typ wrappera (cienka warstwa abstrakcji) jest powszechny w dobrze zaprojektowanym kodzie - oddziela WHAT (transmisja) od HOW (AWGN).
 
 ---
 
 ## main.py
 
-### `calculate_ber(original_bits, decoded_bits)`
+**Priorytet:** SREDNI (orkiestracja symulacji)
 
-**Purpose:** Calculate Bit Error Rate
+### Architektura main.py
 
-**Parameters:**
+**Glowne komponenty:**
 
-- `original_bits` (np.ndarray[int]): Transmitted bits
-- `decoded_bits` (np.ndarray[int]): Received bits
+```
+main()
+  |
+  +-- get_results_path() -----> Ustal gdzie zapisac wyniki
+  |
+  +-- simulate_bpsk() --------> Petla po Eb/N0, oblicz BER
+  +-- simulate_qpsk()
+  +-- simulate_8psk()
+  +-- simulate_16qam()
+  |
+  +-- plot_ber_comparison() --> Wykres BER vs Eb/N0
+  +-- plot_constellations() --> 4 subplots konstelacji
+```
 
-**Returns:** `float` in [0, 1], BER value
+---
 
-**Dependencies:** None
+### `calculate_ber(original_bits, decoded_bits)` - Prosta metryka
 
-**Time complexity:** O(n) where n = len(bits)
-
-**Space complexity:** O(n) temporary for comparison
-
-**Line-by-line:**
+**Kod:**
 
 ```python
-def calculate_ber(original_bits, decoded_bits):
-    errors = np.sum(original_bits != decoded_bits)
-    # Element-wise comparison: != returns boolean array
-    # True where bits differ
-    # np.sum() counts True values (True=1, False=0)
-    # Vectorized comparison and sum
+1  def calculate_ber(original_bits, decoded_bits):
+2      errors = np.sum(original_bits != decoded_bits)
+3      ber = errors / len(original_bits)
+4      return ber
+```
 
-    ber = errors / len(original_bits)
-    # BER = number_of_errors / total_bits
-    # Float division
+**Linia 2: Liczenie bledow**
 
+Co robi:
+
+- `!=` - porownanie element po elemencie (bool array)
+- `np.sum()` - zliczenie True (bledy)
+
+Dlaczego np.sum na bool:
+
+- True = 1, False = 0 w kontekscie numerycznym
+- Szybsze niz petla
+
+**Alternatywa: Manual loop**
+
+```python
+# Wolniejsze
+errors = 0
+for i in range(len(original_bits)):
+    if original_bits[i] != decoded_bits[i]:
+        errors += 1
+```
+
+**Linia 3: BER**
+
+Definicja: Bit Error Rate = bledy / total
+
+**Przyklad:**
+
+```python
+original = np.array([0,1,0,1,1])
+decoded =  np.array([0,1,1,1,1])  # 1 blad (pozycja 2)
+ber = calculate_ber(original, decoded)  # 1/5 = 0.2
+```
+
+---
+
+### `simulate_bpsk(eb_n0_range, n_bits)` - Petla symulacyjna
+
+**Kod (uproszczony):**
+
+```python
+1   def simulate_bpsk(eb_n0_range, n_bits=10000):
+2       ber_values = []
+3
+4       for eb_n0_db in eb_n0_range:
+5           bits = gen_bites(n_bits)
+6           symbols = bpsk_modulation(bits)
+7           received_symbols = transmission_channel(symbols, eb_n0_db)
+8           decoded_bits = bpsk_demodulation(received_symbols)
+9           ber = calculate_ber(bits, decoded_bits)
+10          ber_values.append(ber)
+11
+12      return ber_values
+```
+
+**Linia 4: Petla po Eb/N0**
+
+Dlaczego petla sekwencyjna:
+
+**Alternatywa: Parallel processing**
+
+```python
+# Mozliwe przyspieszenie
+from multiprocessing import Pool
+def sim_one_snr(eb_n0_db):
+    # ... symulacja ...
     return ber
+with Pool() as pool:
+    ber_values = pool.map(sim_one_snr, eb_n0_range)
 ```
 
-**Example:**
+Zalety: ~4x szybsze na 4-core CPU
+
+**Wybrane:** Sekwencyjne bo:
+
+- Prostsza implementacja
+- Latwe debugowanie
+- Wystarczajaco szybkie (~30s dla 10k bitow)
+
+**Linie 5-8: Pipeline**
+
+Diagram przepływu:
+
+```
+bits -> modulation -> channel -> demodulation -> BER
+ (1)       (2)         (3)          (4)         (5)
+```
+
+Dlaczego nowe bity w kazdej iteracji:
+
+- Symulacja Monte Carlo
+- Rozne realizacje szumu
+- Unikanie overfitting do konkretnej sekwencji
+
+**Linia 10: Append**
+
+Dlaczego lista a nie ndarray:
+
+**Alternatywa: Prealokacja**
 
 ```python
-ber = calculate_ber(np.array([0,1,0]), np.array([0,1,1]))  # 0.333...
+ber_values = np.zeros(len(eb_n0_range))
+for i, eb_n0_db in enumerate(eb_n0_range):
+    # ...
+    ber_values[i] = ber
 ```
 
-**Notes:**
+Nieznacznie szybsze, ale mniej elastyczne
 
-- Assumes equal-length arrays (no validation)
-- BER ∈ [0, 1] where 0=perfect, 1=all wrong
+**Wybrane:** Lista bo:
+
+- Nie znamy dlugosci z gory (range moze byc generator)
+- Append O(1) amortyzowane
+- Automatyczne dopasowanie rozmiaru
+
+**Przyklad:**
+
+```python
+ber_values = simulate_bpsk(range(0, 11), n_bits=1000)
+# Zwraca liste ~11 wartosci BER dla Eb/N0 = 0..10 dB
+```
+
+**Wzorzec:** Funkcje simulate_qpsk, simulate_8psk, simulate_16qam maja identyczna strukture - tylko zmiana funkcji modulation/demodulation. Mozliwe uogolnienie do jednej funkcji parametryzowanej.
 
 ---
 
-### `simulate_bpsk(eb_n0_range, n_bits=10000)`
+### `get_results_path()` - Cross-platform path handling
 
-**Purpose:** Run full BPSK simulation over range of Eb/N0 values
-
-**Parameters:**
-
-- `eb_n0_range` (iterable): Eb/N0 values in dB to simulate
-- `n_bits` (int): Number of bits per simulation
-
-**Returns:** `list[float]` BER values corresponding to each Eb/N0
-
-**Dependencies:**
-
-- gen_bites (GetBytes)
-- bpsk_modulation (Modulator)
-- transmission_channel (TransmissionChannel)
-- bpsk_demodulation (Demodulator)
-- calculate_ber (main)
-
-**Time complexity:** O(k\*n) where k=len(eb_n0_range), n=n_bits
-
-**Space complexity:** O(n)
-
-**Line-by-line:**
+**Kod:**
 
 ```python
-def simulate_bpsk(eb_n0_range, n_bits=10000):
-    ber_values = []
-    # Accumulator list for BER results
-
-    for eb_n0_db in eb_n0_range:
-        # Iterate over SNR values
-
-        bits = gen_bites(n_bits)
-        # Generate fresh random bits for each Eb/N0
-        # Ensures independent trials
-
-        symbols = bpsk_modulation(bits)
-        # Modulate bits to BPSK symbols
-
-        received_symbols = transmission_channel(symbols, eb_n0_db)
-        # Pass through AWGN channel
-        # Different noise for each Eb/N0
-
-        decoded_bits = bpsk_demodulation(received_symbols)
-        # Demodulate received symbols
-
-        ber = calculate_ber(bits, decoded_bits)
-        # Compare original and decoded
-
-        ber_values.append(ber)
-        # Store BER for this Eb/N0
-
-    return ber_values
+1   def get_results_path():
+2       script_dir = Path(__file__).parent.resolve()
+3
+4       if script_dir.name == 'src':
+5           results_dir = script_dir.parent / 'results'
+6       else:
+7           results_dir = script_dir / 'results'
+8
+9       results_dir.mkdir(parents=True, exist_ok=True)
+10
+11      return results_dir
 ```
 
-**Example:**
+**Linia 2: Gdzie jestem**
+
+Co robi:
+
+- `__file__` - sciezka do biezacego pliku
+- `.parent` - katalog zawierajacy plik
+- `.resolve()` - sciezka absolutna
+
+**Linie 4-7: Dwa przypadki**
+
+Dlaczego if script_dir.name == 'src':
+
+**Problem:** Skrypt moze byc wywolany z roznych miejsc:
+
+1. `python src/main.py` (cwd = project root)
+2. `cd src && python main.py` (cwd = src/)
+
+**Rozwiazanie:**
+
+- Jesli script_dir to 'src' -> idz w gore, potem do results/
+- Jesli script_dir to project root -> bezposrednio do results/
+
+**Alternatywa: Relative path od cwd**
 
 ```python
-ber_list = simulate_bpsk(range(0, 11), n_bits=1000)  # [0.087, 0.023, ...]
+# ZLE - zalezy od cwd
+results_dir = Path('results')
 ```
 
-**Notes:**
+Problem: Nie dziala gdy cwd != project root
 
-- New random bits per iteration (not same bits at different noise levels)
-- Sequential processing (not parallelized)
-- Similar functions exist: simulate_qpsk, simulate_8psk, simulate_16qam
+**Wybrane:** **file**-based to:
+
+- Niezalezne od cwd
+- Deterministyczne
+- Zawsze dziala
+
+**Linia 9: `mkdir(parents=True, exist_ok=True)`**
+
+Parametry:
+
+- `parents=True` - tworzy katalogi posrednie
+- `exist_ok=True` - nie rzuca bledu jesli istnieje
+
+Dlaczego oba:
+
+**Bez parents:**
+
+```python
+# Jesli 'project/' nie istnieje
+Path('project/results').mkdir()  # Error!
+```
+
+**Bez exist_ok:**
+
+```python
+# Drugie wywolanie
+results_dir.mkdir()  # Error: katalog juz istnieje!
+```
+
+**Wybrane:** parents+exist_ok = idempotentna operacja (bezpieczne wielokrotne wywolanie).
+
+**Przyklad:**
+
+```python
+# Z src/main.py
+path = get_results_path()  # Path('/project/results')
+# Z project/main.py
+path = get_results_path()  # Path('/project/results')
+# Ten sam wynik!
+```
 
 ---
 
-### `plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam)`
+### `plot_ber_comparison()` - Kluczowe decyzje
 
-**Purpose:** Generate comparison plot of BER curves for all modulations
-
-**Parameters:**
-
-- `eb_n0_range` (iterable): X-axis values (Eb/N0 in dB)
-- `ber_*` (list[float]): Y-axis values (BER) for each modulation
-
-**Returns:** None (saves plot to file and displays)
-
-**Dependencies:**
-
-- matplotlib.pyplot
-- get_results_path (main)
-
-**Side effects:**
-
-- Saves PNG file to results/modulation_comparison.png
-- Opens plot window (if GUI available)
-
-**Line-by-line:**
+**Kod (kluczowe fragmenty):**
 
 ```python
-def plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam):
-    results_dir = get_results_path()
-    save_path = results_dir / 'modulation_comparison.png'
-    # Construct save path using pathlib
-
-    plt.figure(figsize=(12, 8))
-    # Create figure with specified size in inches
-
-    plt.semilogy(eb_n0_range, ber_bpsk, 'bo-', linewidth=2, markersize=8, label='BPSK')
-    # semilogy: linear x-axis, logarithmic y-axis
-    # 'bo-': blue color, circle markers, solid line
-    # Repeat for other modulations...
-
-    plt.grid(True, which='both', linestyle='--', alpha=0.7)
-    # which='both': major and minor grid lines
-    # alpha=0.7: semi-transparent
-
-    plt.xlabel('Eb/N0 (dB)', fontsize=14, fontweight='bold')
-    plt.ylabel('Bit Error Rate (BER)', fontsize=14, fontweight='bold')
-    # Axis labels with styling
-
-    plt.title('Modulation Performance Comparison in AWGN Channel',
-              fontsize=16, fontweight='bold')
-    # Plot title
-
-    plt.legend(fontsize=12, loc='best')
-    # loc='best': automatically choose position
-
-    plt.xlim([eb_n0_range[0], eb_n0_range[-1]])
-    plt.ylim([1e-6, 1])
-    # Set axis limits
-    # ylim logarithmic: 10^-6 to 10^0
-
-    plt.tight_layout()
-    # Adjust spacing to prevent label cutoff
-
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    # Save to file
-    # dpi=300: high resolution
-    # bbox_inches='tight': crop whitespace
-
-    plt.show()
-    # Display plot (blocking call if GUI)
+5   plt.figure(figsize=(12, 8))
+6
+7   plt.semilogy(eb_n0_range, ber_bpsk, 'bo-', linewidth=2, markersize=8, label='BPSK')
+8   plt.semilogy(eb_n0_range, ber_qpsk, 'rs-', linewidth=2, markersize=8, label='QPSK')
+9   # ... (podobnie dla 8-PSK i QAM)
+10
+11  plt.grid(True, which='both', linestyle='--', alpha=0.7)
+12
+13  plt.xlabel('Eb/N0 (dB)', fontsize=14, fontweight='bold')
+14  plt.ylabel('Bit Error Rate (BER)', fontsize=14, fontweight='bold')
+15
+16  plt.ylim([1e-6, 1])
 ```
 
-**Example:**
+**Linia 7: `plt.semilogy()`**
+
+Dlaczego semilogy nie plot:
+
+BER typowo: 10⁰ (Eb/N0=-5dB) -> 10⁻⁶ (Eb/N0=15dB)
+
+**Alternatywa: Liniowa skala**
+
+```python
+# ZLE - wszystkie krzywe przy dole
+plt.plot(eb_n0_range, ber_values)
+```
+
+Problem: BER=10⁻⁶ nie widoczne obok BER=10⁰
+
+**Wybrane:** Semilogy (log y-axis) bo:
+
+- Caly zakres BER widoczny
+- Standard w telekomunikacji
+- Nachylenie krzywej = szybkosc poprawy
+
+**Linia 11: `grid(which='both')`**
+
+Co to znaczy:
+
+- `which='major'` - tylko glowne linie siatki (10⁰, 10⁻², 10⁻⁴)
+- `which='both'` - major + minor (10⁻¹, 10⁻³, 10⁻⁵)
+
+Dlaczego both:
+
+- Skala log wymaga gestszej siatki
+- Latwiejsze odczytywanie wartosci
+- Wizualnie przyjemniejsze
+
+**Linia 16: `ylim([1e-6, 1])`**
+
+Dlaczego sztywne limity:
+
+**Alternatywa: Automatyczne**
+
+```python
+# Matplotlib dobiera sam
+plt.semilogy(...)  # Bez ylim
+```
+
+Problem: Limity zaleza od danych, trudne porownania
+
+**Wybrane:** Stale [10⁻⁶, 10⁰] bo:
+
+- Typowy zakres BER
+- Konsystentne miedzy wykresami
+- Przemyslowy standard
+
+**Przyklad:**
 
 ```python
 plot_ber_comparison(range(0,11), ber1, ber2, ber3, ber4)
-# Creates and displays comparison plot
+# Generuje wykres z 4 krzywymi na skali log
 ```
 
-**Notes:**
-
-- Uses semilogy for exponential BER range (10^0 to 10^-6)
-- Results directory created if doesn't exist (via get_results_path)
-
 ---
 
-### `get_results_path()`
+### `plot_constellations()` - Subplots structure
 
-**Purpose:** Determine and create results directory path (cross-platform)
-
-**Parameters:** None
-
-**Returns:** `pathlib.Path` object pointing to results directory
-
-**Dependencies:** pathlib.Path
-
-**Side effects:** Creates results/ directory if it doesn't exist
-
-**Time complexity:** O(1)
-
-**Space complexity:** O(1)
-
-**Line-by-line:**
+**Kod (kluczowe fragmenty):**
 
 ```python
-def get_results_path():
-    script_dir = Path(__file__).parent.resolve()
-    # __file__: path to current script
-    # .parent: directory containing script
-    # .resolve(): absolute path (resolves symlinks)
-
-    if script_dir.name == 'src':
-        # Check if running from src/ subdirectory
-        # .name: last component of path
-
-        results_dir = script_dir.parent / 'results'
-        # Go up one level, then down to results/
-        # Operator /: path concatenation
-    else:
-        results_dir = script_dir / 'results'
-        # Already in project root
-
-    results_dir.mkdir(parents=True, exist_ok=True)
-    # Create directory
-    # parents=True: create parent directories if needed
-    # exist_ok=True: no error if already exists
-
-    return results_dir
+3   fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+4
+5   # Generate symbols
+6   bpsk_symbols = bpsk_modulation(gen_bites(100))
+7   # ... (dla kazdej modulacji)
+8
+9   # Add noise
+10  eb_n0_db = 10
+11  bpsk_noisy = transmission_channel(bpsk_symbols, eb_n0_db)
+12  # ... (dla kazdej)
+13
+14  # Plot BPSK
+15  ax = axes[0, 0]
+16  ax.scatter(bpsk_noisy.real, bpsk_noisy.imag, alpha=0.5, s=30, c='blue', label='Received')
+17  ax.scatter(bpsk_symbols.real, bpsk_symbols.imag, s=200, c='red', marker='x',
+18             linewidths=3, label='Ideal')
+19  # ... (labels, grid, limits)
+20
+21  # ... (podobnie dla QPSK, 8-PSK, QAM w innych subplotach)
 ```
 
-**Example:**
+**Linia 3: `subplots(2, 2)`**
+
+Dlaczego 2x2:
+
+- 4 modulacje do porownania
+- Kwadratowy layout wizualnie zrownowazony
+- Wystarczajaco duzy dla szczegolu (12x12 inches)
+
+**Linia 10: Staly Eb/N0=10dB**
+
+Dlaczego 10dB:
+
+- Sredni SNR (nie za wysoki, nie za niski)
+- Widoczny szum, ale konstelacja rozpoznawalna
+- Porownywalne pomiedzy modulacjami
+
+**Alternatywa: Rozne Eb/N0**
 
 ```python
-path = get_results_path()  # Path('/project/results')
+# Gorsze - utrudnia porownanie
+bpsk_noisy = transmission_channel(bpsk_symbols, 15)
+qpsk_noisy = transmission_channel(qpsk_symbols, 10)
 ```
 
-**Notes:**
+**Linie 16-18: Dwie warstwy**
 
-- Handles two execution contexts: src/ and project root
-- pathlib preferred over os.path (more Pythonic, cross-platform)
-- Safe: mkdir with exist_ok=True is idempotent
+Dlaczego osobno noisy i ideal:
 
----
+**Visual hierarchy:**
 
-### `plot_constellations()`
+1. Niebieskie kropki (noisy) - tlo, duzo punktow
+2. Czerwone X (ideal) - pierwszy plan, duze i widoczne
 
-**Purpose:** Generate subplot with constellation diagrams for all modulations
+**Parametry:**
 
-**Parameters:** None
+- `alpha=0.5` dla noisy - przezroczystosc (wiele punktow)
+- `s=200` dla ideal - duze (dominujace)
+- `marker='x'` - wyroznia od kropek
 
-**Returns:** None (saves plot to file and displays)
-
-**Dependencies:**
-
-- All modulation functions
-- transmission_channel
-- gen_bites
-- matplotlib
-
-**Side effects:**
-
-- Saves PNG file to results/constellations.png
-- Opens plot window
-
-**Line-by-line (key parts):**
+**Przyklad:**
 
 ```python
-def plot_constellations():
-    results_dir = get_results_path()
-    save_path = results_dir / 'constellations.png'
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 12))
-    # Create 2x2 grid of subplots
-    # axes: 2D array of subplot objects
-
-    # Generate and modulate sample bits
-    sample_bits_bpsk = gen_bites(100)
-    bpsk_symbols = bpsk_modulation(sample_bits_bpsk)
-    # ... (similar for other modulations)
-
-    # Add noise at fixed Eb/N0
-    eb_n0_db = 10
-    bpsk_noisy = transmission_channel(bpsk_symbols, eb_n0_db)
-    # ... (similar for others)
-
-    # Plot BPSK
-    ax = axes[0, 0]
-    # Access subplot: axes[row, col]
-
-    ax.scatter(bpsk_noisy.real, bpsk_noisy.imag, alpha=0.5, s=30, c='blue', label='Received')
-    # Scatter plot: x=real, y=imag
-    # alpha=0.5: semi-transparent
-    # s=30: marker size
-
-    ax.scatter(bpsk_symbols.real, bpsk_symbols.imag, s=200, c='red', marker='x',
-               linewidths=3, label='Ideal')
-    # Overlay ideal constellation points
-    # marker='x': X markers
-    # linewidths=3: thick lines
-
-    ax.set_xlabel('In-Phase (I)', fontsize=12)
-    ax.set_ylabel('Quadrature (Q)', fontsize=12)
-    ax.set_title('BPSK Constellation', fontsize=14, fontweight='bold')
-    # Axis labels and title
-
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    # Grid and legend
-
-    ax.set_xlim([-2, 2])
-    ax.set_ylim([-2, 2])
-    # Fixed axis limits for comparison
-
-    ax.axhline(y=0, color='k', linewidth=0.5)
-    ax.axvline(x=0, color='k', linewidth=0.5)
-    # Draw axes through origin
-
-    # ... (repeat for QPSK, 8-PSK, QAM in other subplots)
-
-    fig.suptitle(f'Constellation Diagrams (Eb/N0 = {eb_n0_db} dB)',
-                 fontsize=16, fontweight='bold', y=0.995)
-    # Overall figure title
-    # y=0.995: vertical position (near top)
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.show()
+plot_constellations()
+# Tworzy 4-panelowy wykres z konstelacjami + szumem
 ```
 
-**Notes:**
-
-- Fixed Eb/N0=10dB for all constellations (consistent comparison)
-- Blue dots: received noisy symbols
-- Red X: ideal constellation points
-- Shows effect of noise visually
+**Wzorzec:** Ten sam kod struktura dla kazdego subplota - tylko zmiana danych (symbols) i labels. Wskazuje na mozliwosc ekstrakcji do funkcji pomocniczej.
 
 ---
 
-### `main()`
+## GetBytes.py
 
-**Purpose:** Entry point - orchestrates complete simulation pipeline
+**Priorytet:** NISKI (prosty generator)
 
-**Parameters:** None
+### `gen_bites(n_bits)` - Najprostsza funkcja
 
-**Returns:** None
-
-**Dependencies:** All simulation and plotting functions
-
-**Side effects:**
-
-- Prints progress to stdout
-- Saves plots to files
-- May take several minutes to complete
-
-**Line-by-line (structure):**
+**Kod:**
 
 ```python
-def main():
-    results_dir = get_results_path()
-    # Ensure results directory exists
-
-    # Print header
-    print("=" * 70)
-    print("DIGITAL MODULATION SIMULATION")
-    # ... informational output
-
-    # Parameters
-    eb_n0_range = range(-2, 16)  # -2 to 15 dB
-    n_bits = 10000
-    # Configuration
-
-    # Run simulations
-    ber_bpsk = simulate_bpsk(eb_n0_range, n_bits)
-    ber_qpsk = simulate_qpsk(eb_n0_range, n_bits)
-    ber_8psk = simulate_8psk(eb_n0_range, n_bits)
-    ber_16qam = simulate_16qam(eb_n0_range, n_bits)
-    # Each simulation returns list of BER values
-    # Sequential execution (not parallel)
-
-    # Generate plots
-    plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam)
-    plot_constellations()
-
-    # Print summary table
-    # ... (formatted output)
-
-if __name__ == "__main__":
-    main()
-    # Execute only if script run directly (not imported)
+1  def gen_bites(n_bits):
+2      return np.random.randint(0, 2, size=n_bits)
 ```
 
-**Notes:**
+**Linia 2: Cala logika**
 
-- Single-threaded (could parallelize simulations)
-- Progress printed to console
-- Total runtime: ~30-60 seconds depending on n_bits
+Co robi:
 
----
+- `np.random.randint(low, high, size)`
+- `low=0` - dolna granica (inclusive)
+- `high=2` - gorna granica (exclusive) -> {0, 1}
+- `size=n_bits` - dlugosc tablicy
 
-## Performance Characteristics
+Dlaczego randint:
 
-### Memory usage
-
-- Dominated by symbol arrays: O(n_bits) where n_bits typically 10000
-- Each complex128 symbol: 16 bytes
-- Total: ~160 KB for main arrays + overhead
-
-### Computational bottlenecks
-
-1. **Noise generation**: `np.random.normal()` - cannot vectorize further
-2. **QAM demodulation**: Loop-based (not vectorized)
-3. **8-PSK demodulation**: 8 distance calculations per symbol
-
-### Optimization opportunities
-
-1. Vectorize QAM demodulation (boolean indexing)
-2. Precompute 8-PSK constellation (currently recomputed)
-3. Parallelize simulations across Eb/N0 values (multiprocessing)
-4. Use numba JIT for hot loops
-
----
-
-## Common Pitfalls
-
-### Array length mismatches
-
-- QPSK requires even number of bits
-- 8-PSK requires multiple of 3
-- QAM requires multiple of 4
-  **Solution:** Validate or pad bits before modulation
-
-### Type issues
-
-- Ensure complex dtype: `.astype(complex)`
-- Mixing float32 and float64 can cause precision loss
-  **Solution:** Explicit dtype specifications
-
-### Random seed
-
-- No seed set → non-reproducible results
-  **Solution:** `np.random.seed(42)` at start of simulation
-
-### Normalization
-
-- Forgetting to denormalize in QAM demodulation
-- Wrong normalization factor
-  **Solution:** Verify E[|s|²] = 1 after modulation
-
----
-
-## Testing Recommendations
-
-### Unit tests
+**Alternatywa 1: np.random.choice**
 
 ```python
-def test_bpsk_zero_noise():
-    bits = np.array([0, 1, 0, 1])
+# Bardziej rozwlekle
+return np.random.choice([0, 1], size=n_bits)
+```
+
+**Alternatywa 2: Bernoulli**
+
+```python
+# Wiecej importow
+return np.random.binomial(1, 0.5, size=n_bits)
+```
+
+**Wybrane:** randint to:
+
+- Najprostsza forma
+- Najszybsza (optymalizowana w NumPy)
+- Najbardziej bezposrednia (low, high, size)
+
+**Nazwa funkcji:**
+
+Literowka: "bites" powinno byc "bits"
+
+Dlaczego nie poprawiono:
+
+- Backward compatibility (uzywana w calym projekcie)
+- Koszt zmiany > korzysc
+- Powszechny w starszym kodzie
+
+**Przyklad:**
+
+```python
+bits = gen_bites(10)  # [0,1,1,0,1,0,0,1,1,0] (przykladowo)
+```
+
+**Charakterystyka:**
+
+- Rozklad: Uniform (p=0.5 dla 0 i 1)
+- Generator: Mersenne Twister (np.random domyslny)
+- Nie ustawiony seed -> rozne wyniki kazdorazowo
+
+---
+
+## plot_utils.py
+
+**Priorytet:** NISKI (pomocnicze narzedzia)
+
+### `plot_individual_constellation()` - Single plot helper
+
+**Kod (kluczowe fragmenty):**
+
+```python
+1   def plot_individual_constellation(modulation_name, symbols, noisy_symbols=None,
+2                                     save_path=None):
+3       plt.figure(figsize=(8, 8))
+4
+5       if noisy_symbols is not None:
+6           plt.scatter(noisy_symbols.real, noisy_symbols.imag,
+7                      alpha=0.5, s=30, c='blue', label='Received (with noise)')
+8
+9       unique_symbols = np.unique(symbols)
+10      plt.scatter(unique_symbols.real, unique_symbols.imag,
+11                 s=300, c='red', marker='x', linewidths=4, label='Ideal constellation')
+12
+13      # ... (labels, grid, legend)
+14
+15      if save_path:
+16          plt.savefig(save_path, dpi=300, bbox_inches='tight')
+```
+
+**Linia 9: `np.unique(symbols)`**
+
+Co robi:
+
+- Wyciaga unikalne wartosci z tablicy
+- Usuwa duplikaty
+
+Dlaczego:
+
+Dla 100 symboli QPSK: [s1, s2, s1, s3, ...] (4 unikalne wartosci)
+
+- Bez unique: 100 czerwonych X (nakladanie)
+- Z unique: 4 czerwone X (czytelne)
+
+**Alternatywa: Plotuj wszystkie**
+
+```python
+# ZLE - nakladajace sie markery
+plt.scatter(symbols.real, symbols.imag, ...)
+```
+
+Problem: Wielokrotne rysowanie tego samego punktu
+
+**Linie 15-16: Warunkowy zapis**
+
+Dlaczego save_path optional:
+
+**Use cases:**
+
+1. `save_path=None` - tylko display (interactive)
+2. `save_path='fig.png'` - zapis do pliku
+
+Elastycznosc bez zmuszania do obu akcji.
+
+**Przyklad:**
+
+```python
+symbols = qpsk_modulation(gen_bites(100))
+plot_individual_constellation('QPSK', symbols)
+# Wyswietla pojedynczy wykres QPSK
+```
+
+---
+
+### `compare_spectral_efficiency()` - Bar chart
+
+**Kod (kluczowe fragmenty):**
+
+```python
+2   modulations = ['BPSK', 'QPSK', '8-PSK', '16-QAM']
+3   bits_per_symbol = [1, 2, 3, 4]
+4
+5   plt.figure(figsize=(10, 6))
+6   bars = plt.bar(modulations, bits_per_symbol, color=['blue', 'green', 'orange', 'red'],
+7                  alpha=0.7, edgecolor='black', linewidth=2)
+8
+9   for bar, value in zip(bars, bits_per_symbol):
+10      height = bar.get_height()
+11      plt.text(bar.get_x() + bar.get_width()/2., height,
+12              f'{value} bits/symbol',
+13              ha='center', va='bottom', fontsize=12, fontweight='bold')
+```
+
+**Linie 2-3: Hardcoded dane**
+
+Dlaczego nie z symulacji:
+
+- Spectral efficiency = parametr modulacji (staly)
+- Nie zalezy od Eb/N0 czy szumu
+- Dane konceptualne, nie empiryczne
+
+**Linie 9-13: Etykiety na slupkach**
+
+Co robi:
+
+- Iteracja przez bars (obiekty Rectangle matplotlib)
+- `.get_height()` - wysokosc slupka
+- `plt.text()` - tekst nad slupkiem
+
+Dlaczego nad slupkami a nie w legendzie:
+
+- Bezposrednia informacja (bez szukania w legendzie)
+- Wizualnie atrakcyjniejsze
+- Standard w business charts
+
+**Przyklad:**
+
+```python
+compare_spectral_efficiency()
+# Generuje bar chart z 4 slupkami
+```
+
+**Wzorzec:** Ta funkcja jest samowystarczalna (nie wymaga danych wejsciowych) - typ utility function do jednorazowego uzycia.
+
+---
+
+## Wzorce projektowe i decyzje globalne
+
+### 1. Konwencja nazewnicza
+
+**Funkcje:** `snake_case`
+
+- `bpsk_modulation`, `calculate_ber`
+- Standard Python (PEP 8)
+
+**Zmienne:** `snake_case`
+
+- `eb_n0_db`, `bit_pairs`
+- Rozroznienie od stalych
+
+**Stale (nie uzyte w tym projekcie):** `UPPER_CASE`
+
+- `MAX_BITS = 100000`
+- Konwencja (projekt nie ma stalych globalnych)
+
+### 2. Struktura plikow
+
+Dlaczego modularne pliki a nie jeden big script:
+
+**Zalety podzialu:**
+
+- Separation of concerns (kazdy modul = 1 odpowiedzialnosc)
+- Latwe testowanie (import pojedynczych funkcji)
+- Reusability (np. Modulator.py w innym projekcie)
+- Czytelnosc (50-200 linii na plik vs 1000+)
+
+**Alternatywa: Monolityczny script**
+
+```python
+# all_in_one.py (1500 linii)
+# Trudne utrzymanie, debugowanie, testowanie
+```
+
+### 3. Type hints (brak)
+
+Projekt nie uzywa type hints:
+
+```python
+# Bez type hints
+def bpsk_modulation(bits):
+    ...
+
+# Mozliwe z type hints
+def bpsk_modulation(bits: np.ndarray) -> np.ndarray:
+    ...
+```
+
+Dlaczego brak:
+
+- Starszy kod (sprzed popularnosci type hints)
+- NumPy types skomplikowane (ndarray[float64] vs ndarray[complex128])
+- Docstringi wystarczajace w tym przypadku
+
+### 4. Error handling (minimalne)
+
+Projekt ma tylko podstawowa walidacje:
+
+```python
+# Obecne
+if len(bits) % 2 != 0:
+    raise ValueError("...")
+
+# Mozliwe rozszerzenie
+if not isinstance(bits, np.ndarray):
+    raise TypeError("bits must be numpy array")
+if bits.dtype not in [np.int32, np.int64]:
+    raise TypeError("bits must be integer array")
+# ...
+```
+
+Dlaczego minimalne:
+
+- Kod "naukowy" (kontrolowane wejscia)
+- Priorytet: szybkosc implementacji > robustness
+- Uzytkownik = developer (nie end-user)
+
+### 5. Testowanie (brak unit tests)
+
+Projekt nie ma formalnych testow:
+
+```python
+# Brak
+def test_bpsk_perfect_channel():
+    bits = np.array([0,1,0,1])
     symbols = bpsk_modulation(bits)
-    # No noise: eb_n0_db = inf (use very high value)
-    received = transmission_channel(symbols, eb_n0_db=50)
+    received = transmission_channel(symbols, eb_n0_db=100)
     decoded = bpsk_demodulation(received)
-    assert np.array_equal(bits, decoded)  # Should be perfect
+    assert np.array_equal(bits, decoded)
 ```
 
-### Integration tests
+Dlaczego brak:
+
+- Prototyp/research code
+- Weryfikacja przez wykresy (wizualna)
+- Testy "ad-hoc" w `if __name__ == "__main__"` blokach
+
+**Trade-off:** Szybsza implementacja vs stabilnosc long-term.
+
+### 6. Dokumentacja (docstringi vs komentarze)
+
+Projekt uzywa docstringow:
 
 ```python
-def test_full_pipeline():
-    ber = simulate_bpsk([10], n_bits=10000)[0]
-    assert 0 < ber < 0.001  # Typical BER at 10 dB
+def bpsk_modulation(bits):
+    """
+    BPSK modulation...
+
+    Parameters
+    ----------
+    ...
+    """
 ```
 
-### Edge cases
+Dlaczego docstringi a nie komentarze:
 
-- Single bit: `gen_bites(1)`
-- Empty array: `gen_bites(0)` (should handle gracefully)
-- Very high noise: `eb_n0_db = -10` (BER → 0.5)
-- Perfect channel: `eb_n0_db = 100` (BER → 0)
+**Zalety docstringow:**
+
+- `help(bpsk_modulation)` dziala
+- IDE pokazuja tooltips
+- Mozliwosc auto-generacji dokumentacji (Sphinx)
+
+**Komentarze inline:**
+
+- Uzyte sporadycznie
+- Tylko dla skomplikowanych linii
+- Nie dla oczywistych operacji
+
+### 7. Numeracja linii w dokumentacji
+
+Format:
+
+```python
+1  def function():
+2      line1
+3      line2
+```
+
+Dlaczego:
+
+- Latwe referencje ("zobacz linia 5")
+- Zgodnosc z edytorami kodu
+- Standard w code review
 
 ---
 
-## End of Technical Documentation
+## Optymalizacje i bottlenecki
 
-This reference covers all functions with line-by-line analysis.
-For conceptual understanding, see `code-documentation.md`.
-For theory, see `theoretical-background.md`.
+### 1. Bottleneck: Petla w simulate\_\*
+
+**Obecne:**
+
+```python
+for eb_n0_db in range(-2, 16):  # 18 iteracji
+    # ... symulacja ...
+```
+
+**Czas:** ~30s dla n_bits=10000
+
+**Optymalizacja: Parallel**
+
+```python
+from multiprocessing import Pool
+
+def sim_one(eb_n0_db):
+    # ... pojedyncza symulacja ...
+    return ber
+
+with Pool(processes=4) as pool:
+    ber_values = pool.map(sim_one, range(-2, 16))
+```
+
+**Przyspieszenie:** ~4x (na 4-core CPU)
+
+**Dlaczego nie zaimplementowane:**
+
+- Dodatkowa zlozonosc (imports, pool management)
+- Wystarczajaco szybkie dla prototypu
+- Trudniejsze debugowanie
+
+### 2. Bottleneck: QAM demodulation loop
+
+**Obecne:**
+
+```python
+for idx, symbol in enumerate(denorm_symbols):
+    i_bits = pam4_demod(symbol.real)
+    q_bits = pam4_demod(symbol.imag)
+    bits[4*idx:4*idx+4] = i_bits + q_bits
+```
+
+**Mozliwa wektoryzacja:**
+
+```python
+# Progi
+thresholds_I = np.array([-2, 0, 2])
+thresholds_Q = np.array([-2, 0, 2])
+
+# Digitize (find bin)
+i_levels = np.digitize(denorm_symbols.real, thresholds_I)
+q_levels = np.digitize(denorm_symbols.imag, thresholds_Q)
+
+# Map levels -> bits (lookup table)
+level_to_bits = {0:[0,0], 1:[0,1], 2:[1,1], 3:[1,0]}
+# ... (vectorized application)
+```
+
+**Przyspieszenie:** ~2-3x
+
+**Dlaczego nie:**
+
+- Skomplikowane (digitize + lookup)
+- Demodulacja nie jest bottleneck (szybka vs symulacja)
+
+### 3. Memory: Prealokacja vs append
+
+**Obecne:**
+
+```python
+ber_values = []
+for ...:
+    ber_values.append(ber)
+```
+
+**Alternatywa:**
+
+```python
+ber_values = np.zeros(len(eb_n0_range))
+for i, ...:
+    ber_values[i] = ber
+```
+
+**Trade-off:**
+
+- Append: O(1) amortyzowane, elastyczne
+- Prealokacja: O(1) zawsze, wymaga znania rozmiaru
+
+W tym przypadku: roznica pomijalnie mala (18 elementow).
+
+---
+
+## Najczescsze pytania (FAQ)
+
+**Q: Dlaczego wszystkie modulacje zwracaja complex, nawet BPSK?**
+
+A: Uniwersalny interfejs. TransmissionChannel i Demodulator oczekuja complex. Bez konwersji miedzy etapami. Upraszcza kod.
+
+**Q: Dlaczego Gray coding, nie natural coding?**
+
+A: Minimalizuje BER. Przy bledzie symbolu (najblizsza konstelacja) zmienia sie 1 bit zamiast 2. Standard w telekomunikacji.
+
+**Q: Dlaczego petla w QPSK demodulation, nie wektorowe?**
+
+A: Trudne do wektoryzacji (przeplatanie bitow). Petla jest czytelna. Nie bottleneck (mala liczba symboli). Trade-off: czytelnosc > szybkosc.
+
+**Q: Dlaczego separate TransmissionChannel.py dla 2 linii kodu?**
+
+A: Separation of concerns. Abstrakcja (kanal != szum). Przyszle rozszerzenia (inne typy kanalow). Klarowne API.
+
+**Q: Dlaczego brak testow jednostkowych?**
+
+A: Research/prototyping code. Weryfikacja wizualna (wykresy). Testy ad-hoc w `if __name__`. Trade-off: szybkosc rozwoju vs robustness.
+
+**Q: Dlaczego semilogy a nie plot dla BER?**
+
+A: BER zmienia sie wykładniczo (10⁰ -> 10⁻⁶). Skala liniowa nieczytelna. Semilogy to standard w telekomunikacji.
+
+**Q: Czy moge uzyc tego kodu w projekcie komercyjnym?**
+
+A: Sprawdz licencje (README). Typowo kod edukacyjny = swobodne uzycie. Autor = ModulationPSKProject Team.
+
+---
+
+## Koniec dokumentacji technicznej
+
+**Wersja:** 1.0  
+**Data:** 2025-10-23  
+**Autor:** AI Assistant  
+**Format:** Markdown bez polskich znakow diakrytycznych
+
+Dla wiecej informacji:
+
+- README.md - przeglad projektu
+- docs/index.md - indeks dokumentacji
+- code-documentation.md - konceptualne wyjasnienia
+
+---
