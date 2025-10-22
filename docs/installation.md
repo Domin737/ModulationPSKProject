@@ -44,7 +44,7 @@ python --version
 python3 --version
 ```
 
-Powinno wyswietlic wersje Python, np.: `Python 3.9.7`
+Powinno wyswietlic wersje Python rowna lub wyzsza niz 3.8, np.: `Python 3.9.7`
 
 Jesli Python nie jest zainstalowany, zobacz: [Wymagania i srodowisko](requirements-and-environment.md#python)
 
@@ -604,7 +604,7 @@ pip install -r requirements.txt
 
 ```cmd
 deactivate  REM Dezaktywuj srodowisko
-rmdir /s venv
+MSYS2_ARG_CONV_EXCL='*' cmd //c "rmdir /s /q venv"
 ```
 
 **Linux/Mac:**
