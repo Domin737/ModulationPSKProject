@@ -604,7 +604,7 @@ pip install -r requirements.txt
 
 ```cmd
 deactivate  REM Dezaktywuj srodowisko
-MSYS2_ARG_CONV_EXCL='*' cmd //c "rmdir /s /q venv"
+rmdir /s /q venv
 ```
 
 **Linux/Mac:**

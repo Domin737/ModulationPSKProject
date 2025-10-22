@@ -5,10 +5,34 @@ Simulates BPSK, QPSK, 8-PSK, 16-QAM and compares performance.
 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+from pathlib import Path
 from GetBytes import gen_bites
 from Modulator import bpsk_modulation, qpsk_modulation, psk8_modulation, qam16_modulation
 from TransmissionChannel import transmission_channel
 from Demodulator import bpsk_demodulation, qpsk_demodulation, psk8_demodulation, qam16_demodulation
+
+
+def get_results_path():
+    """
+    Get the correct path to results directory.
+    Works regardless of where the script is executed from.
+    """
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent.resolve()
+    
+    # Check if we're in src/ directory
+    if script_dir.name == 'src':
+        # Go one level up to project root, then to results
+        results_dir = script_dir.parent / 'results'
+    else:
+        # We're already in project root
+        results_dir = script_dir / 'results'
+    
+    # Create directory if it doesn't exist
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    return results_dir
 
 
 def calculate_ber(original_bits, decoded_bits):
@@ -106,9 +130,12 @@ def simulate_16qam(eb_n0_range, n_bits=10000):
     return ber_values
 
 
-def plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam, 
-                        save_path='results/modulation_comparison.png'):
+def plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam):
     """Plot BER comparison for all modulation schemes."""
+    # Get correct path to results directory
+    results_dir = get_results_path()
+    save_path = results_dir / 'modulation_comparison.png'
+    
     plt.figure(figsize=(12, 8))
     
     # Plot all curves
@@ -144,8 +171,12 @@ def plot_ber_comparison(eb_n0_range, ber_bpsk, ber_qpsk, ber_8psk, ber_16qam,
     plt.show()
 
 
-def plot_constellations(save_path='results/constellations.png'):
+def plot_constellations():
     """Plot constellation diagrams for all modulation schemes."""
+    # Get correct path to results directory
+    results_dir = get_results_path()
+    save_path = results_dir / 'constellations.png'
+    
     fig, axes = plt.subplots(2, 2, figsize=(12, 12))
     
     # Generate sample bits
@@ -252,6 +283,12 @@ def plot_constellations(save_path='results/constellations.png'):
 
 def main():
     """Main function - runs complete simulation for all modulations."""
+    
+    # Get and display results directory path
+    results_dir = get_results_path()
+    print(f"Results will be saved to: {results_dir}")
+    print()
+    
     print("=" * 70)
     print("DIGITAL MODULATION SIMULATION")
     print("BPSK, QPSK, 8-PSK, 16-QAM Performance Analysis")
