@@ -5,13 +5,15 @@ ModulationPSKProject
 |-- .
 |   |-- docs
 |   |   |-- code-documentation.md
+|   |   |-- code-documentation-technical.md
 |   |   |-- error-handling.md
 |   |   |-- index.md
 |   |   |-- installation.md
 |   |   |-- list-files-instructions.md
 |   |   |-- project-structure.md
 |   |   |-- requirements-and-environment.md
-|   |   +-- start-here-summary.md
+|   |   |-- start-here-summary.md
+|   |   +-- theoretical-background.md
 |   |-- results
 |   |   |-- .gitkeep
 |   |   |-- constellations.png

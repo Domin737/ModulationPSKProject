@@ -1,4 +1,5 @@
 ﻿./docs/code-documentation.md
+./docs/code-documentation-technical.md
 ./docs/error-handling.md
 ./docs/index.md
 ./docs/installation.md
@@ -6,6 +7,7 @@
 ./docs/project-structure.md
 ./docs/requirements-and-environment.md
 ./docs/start-here-summary.md
+./docs/theoretical-background.md
 ./Export-ProjectStructure.ps1
 ./README.md
 ./requirements.txt
