@@ -1,48 +1,129 @@
 # Results Directory
 
-This directory contains generated plots and simulation results.
+## Przeznaczenie
 
-## Generated Files
+Ten katalog jest przeznaczony do przechowywania wynikow symulacji projektu ModulationPSKProject.
 
-After running `python src/main.py`, the following files will be created here:
+## Zawartosc
 
-### BER Analysis
-- **ber_comparison.png** - BER vs Eb/N0 comparison for all modulation schemes
+Po uruchomieniu symulacji (python src/main.py), w tym katalogu pojawia sie:
 
-### Constellation Diagrams
-- **bpsk_constellation.png** - BPSK constellation (clean and with noise)
-- **qpsk_constellation.png** - QPSK constellation (clean and with noise)
-- **8psk_constellation.png** - 8-PSK constellation (clean and with noise)
-- **16qam_constellation.png** - 16-QAM constellation (clean and with noise)
+### Wykresy BER (Bit Error Rate)
 
-## Usage
+- `bpsk_ber_curve.png` - Wykres BER vs Eb/N0 dla modulacji BPSK
+- `qpsk_ber_curve.png` - Wykres BER vs Eb/N0 dla modulacji QPSK
+- `8psk_ber_curve.png` - Wykres BER vs Eb/N0 dla modulacji 8-PSK
+- `qam16_ber_curve.png` - Wykres BER vs Eb/N0 dla modulacji 16-QAM
+- `qam64_ber_curve.png` - Wykres BER vs Eb/N0 dla modulacji 64-QAM
+- `comparison_all_modulations.png` - Porownanie wszystkich modulacji na jednym wykresie
 
-To generate results:
+### Diagramy konstelacji
 
-```bash
-# Make sure you're in the project root
-cd ModulationPSKProject
+- `bpsk_constellation.png` - Diagram konstelacji BPSK
+- `qpsk_constellation.png` - Diagram konstelacji QPSK
+- `8psk_constellation.png` - Diagram konstelacji 8-PSK
+- `qam16_constellation.png` - Diagram konstelacji 16-QAM
+- `qam64_constellation.png` - Diagram konstelacji 64-QAM
 
-# Activate virtual environment
-source venv/bin/activate  # Linux/Mac
-# or
-venv\Scripts\activate     # Windows
+### Diagramy konstelacji z szumem
 
-# Run simulation
-cd src
-python main.py
+- `bpsk_constellation_noisy.png` - Diagram konstelacji BPSK po przejsciu przez kanal
+- `qpsk_constellation_noisy.png` - Diagram konstelacji QPSK po przejsciu przez kanal
+- `8psk_constellation_noisy.png` - Diagram konstelacji 8-PSK po przejsciu przez kanal
+- `qam16_constellation_noisy.png` - Diagram konstelacji 16-QAM po przejsciu przez kanal
+
+### Dane surowe (opcjonalnie)
+
+- `simulation_data.csv` - Dane surowe z symulacji w formacie CSV
+- `ber_results.txt` - Wyniki BER w formacie tekstowym
+
+## Format plikow
+
+### Wykresy PNG
+
+- Rozdzielczosc: 1920x1080 px (lub inna ustawiona w kodzie)
+- DPI: 300 (dla wysokiej jakosci)
+- Format: PNG z przezroczystoscia
+
+### Wykresy PDF (opcjonalnie)
+
+- Format wektorowy dla publikacji naukowych
+- Wysokiej jakosci skalowanie
+
+### Dane CSV
+
+```csv
+Eb_N0_dB,BER_BPSK,BER_QPSK,BER_8PSK,BER_QAM16
+0,0.078,0.095,0.156,0.234
+1,0.062,0.078,0.132,0.198
+...
 ```
 
-Results will be automatically saved to this directory.
+## Uwagi
 
-## Notes
+- Ten katalog jest ignorowany przez Git (.gitignore), aby nie wersjonowac duzych plikow wynikow
+- Wykresy sa generowane automatycznie podczas kazdego uruchomienia symulacji
+- Poprzednie wyniki moga byc nadpisane - zrob kopie waznych wynikow przed ponownym uruchomieniem
+- Jesli katalog nie istnieje, zostanie utworzony automatycznie przez skrypt instalacyjny
 
-- All plots are saved as high-resolution PNG files (300 DPI)
-- Plots are also displayed during simulation (if GUI available)
-- Old plots are overwritten when you run the simulation again
-- You can safely delete these files - they will be regenerated
+## Czyszczenie wynikow
 
-## Git
+Aby usunac wszystkie wyniki:
 
-These files are ignored by Git (see .gitignore) to keep the repository clean.
-Only this README.md is tracked.
+**Windows:**
+
+```cmd
+del /Q results\*.png
+del /Q results\*.pdf
+del /Q results\*.csv
+```
+
+**Linux/Mac:**
+
+```bash
+rm -f results/*.png
+rm -f results/*.pdf
+rm -f results/*.csv
+```
+
+## Eksport wynikow
+
+Wyniki moga byc eksportowane do:
+
+- Prezentacji (PowerPoint, Google Slides)
+- Raportow (Word, LaTeX)
+- Publikacji naukowych
+- Stron internetowych
+
+## Rozmiar plikow
+
+Przyblizone rozmiary plikow:
+
+- Wykres PNG (pojedynczy): ~200-500 KB
+- Wykres PDF (pojedynczy): ~50-150 KB
+- Dane CSV: ~10-100 KB (zalezne od liczby punktow)
+
+Calkowity rozmiar po pelnej symulacji: ~5-10 MB
+
+## Lokalizacja
+
+```
+ModulationPSKProject/
+└── results/              ← Ten katalog
+    ├── .gitkeep
+    ├── README.md         ← Ten plik
+    └── (wygenerowane pliki wynikow)
+```
+
+## Dodatkowe informacje
+
+Wiecej informacji o wynikach symulacji znajdziesz w:
+
+- [Glowny README](../README.md)
+- [Dokumentacja kodu](../docs/code-documentation.md)
+- [Instrukcja uzycia](../docs/installation.md)
+
+---
+
+**Ostatnia aktualizacja:** 2025-10-22  
+**Wersja:** 1.4.0
