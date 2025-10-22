@@ -14,6 +14,8 @@ ModulationPSKProject
 |   |   +-- start-here-summary.md
 |   |-- results
 |   |   |-- .gitkeep
+|   |   |-- constellations.png
+|   |   |-- modulation_comparison.png
 |   |   +-- README.md
 |   |-- src
 |   |   |-- AddAWGNNoise.py

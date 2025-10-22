@@ -10,6 +10,8 @@
 ./README.md
 ./requirements.txt
 ./results/.gitkeep
+./results/constellations.png
+./results/modulation_comparison.png
 ./results/README.md
 ./setup.bat
 ./setup.sh
