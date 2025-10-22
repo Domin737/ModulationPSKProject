@@ -1,3 +1,10 @@
+"""
+AddAWGNNoise.py - AWGN noise generator
+
+This module adds Additive White Gaussian Noise (AWGN) to modulated symbols
+based on a specified Eb/N0 ratio.
+"""
+
 import numpy as np
 
 
@@ -5,14 +12,10 @@ def add_awgn_noise(symbols, eb_n0_db):
     """
     Add AWGN (Additive White Gaussian Noise) to symbols
     
-    This function adds complex Gaussian noise to the input symbols based on
-    the specified Eb/N0 ratio. The noise power is calculated to achieve the
-    desired signal-to-noise ratio.
-    
     Parameters:
     -----------
     symbols : numpy.ndarray (complex)
-        Modulated symbols (can be from any modulation: BPSK, QPSK, 8-PSK, QAM)
+        Modulated symbols (from any modulation scheme)
     eb_n0_db : float
         Energy per bit to noise power spectral density ratio in dB
         Higher values mean less noise (better signal quality)
@@ -21,20 +24,6 @@ def add_awgn_noise(symbols, eb_n0_db):
     --------
     numpy.ndarray (complex)
         Symbols with added AWGN noise
-    
-    Notes:
-    ------
-    - Assumes Eb = 1.0 (normalized energy per bit)
-    - Generates complex Gaussian noise (I + jQ components)
-    - Noise power is calculated based on Eb/N0 ratio
-    - Each component (I and Q) has variance = sigma^2 = N0/2
-    
-    Example:
-    --------
-    >>> symbols = np.array([1.0, -1.0, 1.0], dtype=complex)
-    >>> noisy = add_awgn_noise(symbols, eb_n0_db=10.0)
-    >>> print(noisy)
-    # Will be close to [1, -1, 1] but with added noise
     """
     # Convert Eb/N0 from dB to linear scale
     eb_n0 = 10 ** (eb_n0_db / 10.0)
@@ -45,15 +34,13 @@ def add_awgn_noise(symbols, eb_n0_db):
     # Noise power spectral density
     n0 = eb / eb_n0
     
-    # Standard deviation of noise (for I and Q components)
-    # Each component has variance = N0/2, so std = sqrt(N0/2)
+    # Standard deviation (for I and Q components)
     sigma = np.sqrt(n0 / 2)
     
     # Number of symbols
     n_symbols = symbols.shape[0]
     
     # Generate Gaussian noise for I and Q components
-    # Mean = 0, Std = sigma
     noise_i = sigma * np.random.normal(0, 1, size=n_symbols)
     noise_q = sigma * np.random.normal(0, 1, size=n_symbols)
     
@@ -66,14 +53,13 @@ def add_awgn_noise(symbols, eb_n0_db):
     return received_symbols
 
 
-# Test code
 if __name__ == "__main__":
     print("=" * 60)
     print("Testing AWGN Noise Addition")
     print("=" * 60)
     print()
     
-    # Create test symbols (BPSK: +1, -1, +1, -1, +1)
+    # Create test symbols (BPSK)
     test_symbols = np.array([1.0, -1.0, 1.0, -1.0, 1.0], dtype=complex)
     
     print(f"Original symbols: {test_symbols}")
@@ -85,7 +71,7 @@ if __name__ == "__main__":
     for eb_n0 in eb_n0_values:
         noisy_symbols = add_awgn_noise(test_symbols, eb_n0)
         
-        # Calculate SNR empirically
+        # Calculate SNR
         signal_power = np.mean(np.abs(test_symbols) ** 2)
         noise = noisy_symbols - test_symbols
         noise_power = np.mean(np.abs(noise) ** 2)
@@ -103,6 +89,3 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Test completed!")
     print("=" * 60)
-    print()
-    print("Note: As Eb/N0 increases, noise decreases and symbols become")
-    print("      closer to original values.")

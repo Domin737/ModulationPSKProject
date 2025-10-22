@@ -1,13 +1,16 @@
+"""
+GetBytes.py - Random bit generator for digital communication simulation
+
+This module provides functionality to generate random binary bits
+for testing modulation schemes.
+"""
+
 import numpy as np
 
 
 def gen_bites(n_bits):
     """
     Generate random binary bits (0 or 1)
-    
-    This function generates an array of random binary values uniformly
-    distributed between 0 and 1. It's used to simulate data for transmission
-    in digital communication systems.
     
     Parameters:
     -----------
@@ -24,24 +27,17 @@ def gen_bites(n_bits):
     >>> bits = gen_bites(10)
     >>> print(bits)
     [1 0 1 1 0 1 0 0 1 1]
-    
-    >>> len(bits)
-    10
-    
-    >>> np.all((bits == 0) | (bits == 1))
-    True
     """
     return np.random.randint(0, 2, size=(n_bits))
 
 
-# Test code
 if __name__ == "__main__":
     print("=" * 60)
     print("Testing Random Bit Generation")
     print("=" * 60)
     print()
     
-    # Test 1: Generate 20 bits
+    # Test 1: Generate bits
     print("Test 1: Generate 20 random bits")
     print("-" * 60)
     bits = gen_bites(20)
@@ -70,6 +66,3 @@ if __name__ == "__main__":
     print("=" * 60)
     print("All tests completed!")
     print("=" * 60)
-    print()
-    print("Note: With 10000 bits, we expect approximately 50% ones and 50% zeros")
-    print("      due to uniform random distribution.")

@@ -1,3 +1,10 @@
+"""
+main.py - Main simulation program
+
+This is the main program that runs complete simulations for all modulation
+schemes (BPSK, QPSK, 8-PSK, 16-QAM) and generates comparison plots.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from GetBytes import gen_bites
@@ -9,8 +16,6 @@ from Demodulator import bpsk_demodulation, qpsk_demodulation, psk8_demodulation,
 def calculate_ber(original_bits, decoded_bits):
     """
     Calculate Bit Error Rate (BER)
-    
-    BER is the ratio of incorrectly decoded bits to total bits.
     
     Parameters:
     -----------
@@ -36,7 +41,7 @@ def simulate_modulation(modulation_type, eb_n0_range, n_bits=10000):
     Parameters:
     -----------
     modulation_type : str
-        Type of modulation: 'BPSK', 'QPSK', '8-PSK', or '16-QAM'
+        Type: 'BPSK', 'QPSK', '8-PSK', or '16-QAM'
     eb_n0_range : array-like
         Range of Eb/N0 values in dB
     n_bits : int
@@ -94,7 +99,7 @@ def simulate_modulation(modulation_type, eb_n0_range, n_bits=10000):
     return ber_values
 
 
-def plot_ber_curves(eb_n0_range, results_dict, save_path='ber_comparison.png'):
+def plot_ber_curves(eb_n0_range, results_dict, save_path='../results/ber_comparison.png'):
     """
     Plot BER vs Eb/N0 curves for multiple modulation schemes
     
@@ -109,7 +114,6 @@ def plot_ber_curves(eb_n0_range, results_dict, save_path='ber_comparison.png'):
     """
     plt.figure(figsize=(12, 8))
     
-    # Define markers and colors for each modulation
     styles = {
         'BPSK': {'marker': 'o', 'color': 'blue', 'linestyle': '-'},
         'QPSK': {'marker': 's', 'color': 'red', 'linestyle': '--'},
@@ -154,11 +158,10 @@ def plot_constellation(modulation_type, n_symbols=1000, eb_n0_db=10):
     modulation_type : str
         Type of modulation
     n_symbols : int
-        Number of symbols to generate and plot
+        Number of symbols to generate
     eb_n0_db : float
         Eb/N0 in dB for noisy constellation
     """
-    # Select modulation function
     if modulation_type == 'BPSK':
         modulate = bpsk_modulation
         bits_per_symbol = 1
@@ -189,7 +192,8 @@ def plot_constellation(modulation_type, n_symbols=1000, eb_n0_db=10):
     ax1.scatter(symbols.real, symbols.imag, alpha=0.6, s=50, c='blue')
     ax1.set_xlabel('In-Phase (I)', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Quadrature (Q)', fontsize=12, fontweight='bold')
-    ax1.set_title(f'{modulation_type} Constellation (Clean)', fontsize=14, fontweight='bold')
+    ax1.set_title(f'{modulation_type} Constellation (Clean)', 
+                  fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3)
     ax1.axhline(y=0, color='k', linewidth=0.5)
     ax1.axvline(x=0, color='k', linewidth=0.5)
@@ -207,7 +211,7 @@ def plot_constellation(modulation_type, n_symbols=1000, eb_n0_db=10):
     ax2.axis('equal')
     
     plt.tight_layout()
-    save_path = f'{modulation_type.lower().replace("-", "")}_constellation.png'
+    save_path = f'../results/{modulation_type.lower().replace("-", "")}_constellation.png'
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Constellation plot saved as: {save_path}")
     plt.show()
@@ -265,10 +269,10 @@ def main():
     print("=" * 70)
     print()
     print("Generated files:")
-    print("  - ber_comparison.png")
+    print("  - ../results/ber_comparison.png")
     for mod_type in modulations:
         filename = f'{mod_type.lower().replace("-", "")}_constellation.png'
-        print(f"  - {filename}")
+        print(f"  - ../results/{filename}")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ ENV/
 
 # IDE - PyCharm / IntelliJ
 .idea/
+*.iml
 /shelf/
 /workspace.xml
 /httpRequests/
@@ -64,6 +65,7 @@ results/*.jpg
 results/*.csv
 results/*.txt
 !results/.gitkeep
+!results/README.md
 
 # Logs
 *.log
@@ -85,6 +87,16 @@ docs/.doctrees/
 *.swp
 *~
 
-# Project specific
-*.pyc
-.cache/
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~

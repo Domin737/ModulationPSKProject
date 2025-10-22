@@ -1,43 +1,63 @@
 @echo off
 echo ==========================================
-echo Konfiguracja srodowiska Python
-echo ModulationPSKProject
+echo ModulationPSKProject - Setup
 echo ==========================================
 echo.
 
-REM Sprawdzenie wersji Pythona
-echo Sprawdzanie wersji Pythona...
+REM Check Python version
+echo Checking Python version...
 python --version
-
-REM Tworzenie wirtualnego srodowiska
+if errorlevel 1 (
+    echo ERROR: Python not found! Please install Python 3.8 or higher.
+    pause
+    exit /b 1
+)
 echo.
-echo Tworzenie wirtualnego srodowiska...
+
+REM Create virtual environment
+echo Creating virtual environment...
 python -m venv venv
-
-REM Aktywacja wirtualnego srodowiska
+if errorlevel 1 (
+    echo ERROR: Failed to create virtual environment!
+    pause
+    exit /b 1
+)
 echo.
-echo Aktywacja wirtualnego srodowiska...
+
+REM Activate virtual environment
+echo Activating virtual environment...
 call venv\Scripts\activate.bat
-
-REM Aktualizacja pip
 echo.
-echo Aktualizacja pip...
+
+REM Upgrade pip
+echo Upgrading pip...
 python -m pip install --upgrade pip
-
-REM Instalacja zaleznosci
 echo.
-echo Instalacja zaleznosci z requirements.txt...
+
+REM Install dependencies
+echo Installing dependencies from requirements.txt...
 pip install -r requirements.txt
+if errorlevel 1 (
+    echo ERROR: Failed to install dependencies!
+    pause
+    exit /b 1
+)
+echo.
 
+REM Create results directory
+echo Creating results directory...
+if not exist results mkdir results
 echo.
+
 echo ==========================================
-echo Konfiguracja zakonczona pomyslnie!
+echo Setup completed successfully!
 echo ==========================================
 echo.
-echo Aby aktywowac srodowisko uruchom:
-echo venv\Scripts\activate.bat
+echo To activate the environment, run:
+echo   venv\Scripts\activate.bat
 echo.
-echo Aby dezaktywowac srodowisko uruchom:
-echo deactivate
+echo To run the simulation:
+echo   cd src
+echo   python main.py
 echo.
 pause

@@ -1,42 +1,60 @@
 #!/bin/bash
 
 echo "=========================================="
-echo "Konfiguracja srodowiska Python"
-echo "ModulationPSKProject"
+echo "ModulationPSKProject - Setup"
 echo "=========================================="
 echo ""
 
-# Sprawdzenie wersji Pythona
-echo "Sprawdzanie wersji Pythona..."
+# Check Python version
+echo "Checking Python version..."
 python3 --version
-
-# Tworzenie wirtualnego srodowiska
+if [ $? -ne 0 ]; then
+    echo "ERROR: Python not found! Please install Python 3.8 or higher."
+    exit 1
+fi
 echo ""
-echo "Tworzenie wirtualnego srodowiska..."
+
+# Create virtual environment
+echo "Creating virtual environment..."
 python3 -m venv venv
-
-# Aktywacja wirtualnego srodowiska
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to create virtual environment!"
+    exit 1
+fi
 echo ""
-echo "Aktywacja wirtualnego srodowiska..."
+
+# Activate virtual environment
+echo "Activating virtual environment..."
 source venv/bin/activate
-
-# Aktualizacja pip
 echo ""
-echo "Aktualizacja pip..."
+
+# Upgrade pip
+echo "Upgrading pip..."
 pip install --upgrade pip
-
-# Instalacja zaleznosci
 echo ""
-echo "Instalacja zaleznosci z requirements.txt..."
+
+# Install dependencies
+echo "Installing dependencies from requirements.txt..."
 pip install -r requirements.txt
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to install dependencies!"
+    exit 1
+fi
+echo ""
 
+# Create results directory
+echo "Creating results directory..."
+mkdir -p results
 echo ""
+
 echo "=========================================="
-echo "Konfiguracja zakonczona pomyslnie!"
+echo "Setup completed successfully!"
 echo "=========================================="
 echo ""
-echo "Aby aktywowac srodowisko uruchom:"
-echo "source venv/bin/activate"
+echo "To activate the environment, run:"
+echo "  source venv/bin/activate"
 echo ""
-echo "Aby dezaktywowac srodowisko uruchom:"
-echo "deactivate"
+echo "To run the simulation:"
+echo "  cd src"
+echo "  python main.py"
+echo ""

@@ -1,3 +1,9 @@
+"""
+TransmissionChannel.py - Transmission channel simulator
+
+This module simulates a transmission channel with AWGN noise.
+"""
+
 import numpy as np
 from AddAWGNNoise import add_awgn_noise
 
@@ -6,36 +12,22 @@ def transmission_channel(symbols, eb_n0_db):
     """
     Simulate transmission through AWGN channel
     
-    This function models a transmission channel with Additive White 
-    Gaussian Noise (AWGN). It takes modulated symbols as input and 
-    returns the same symbols corrupted by noise.
-    
     Parameters:
     -----------
     symbols : numpy.ndarray (complex)
-        Transmitted symbols (from modulator)
+        Transmitted symbols
     eb_n0_db : float
-        Eb/N0 ratio in dB (Energy per bit to Noise power spectral density)
-        Higher values mean better signal quality (less noise)
+        Eb/N0 ratio in dB
     
     Returns:
     --------
     numpy.ndarray (complex)
-        Received symbols with added AWGN noise
-    
-    Example:
-    --------
-    >>> symbols = np.array([1.0, -1.0, 1.0], dtype=complex)
-    >>> received = transmission_channel(symbols, eb_n0_db=10.0)
-    >>> print(received)  # Will be close to original but with noise
+        Received symbols with added noise
     """
-    # Add AWGN noise to symbols
     received_symbols = add_awgn_noise(symbols, eb_n0_db)
-    
     return received_symbols
 
 
-# Test code
 if __name__ == "__main__":
     print("=" * 60)
     print("Testing Transmission Channel")
